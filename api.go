@@ -25,7 +25,7 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 			return
 		}
 
-		log.Println("Received booking request for ", date)
+		log.Println("Received booking request for", date)
 
 		// Validate the date format (e.g., "Feb 18, 2025")
 		if !isValidDate(date) {
@@ -62,7 +62,7 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 			return
 		}
 
-		log.Println("Booking successful for date: ", date)
+		log.Println("Booking successful for date:", date)
 
 		// If the date is valid, respond with success
 		w.WriteHeader(http.StatusOK)

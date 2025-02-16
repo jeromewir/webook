@@ -1,0 +1,9 @@
+services:
+  webook:
+    image: ghcr.io/jeromewir/webook:latest
+    ports:
+      - 8080:8080
+    env_file:
+      - .env
+    volumes:
+      - ./data:/home/chrome-data

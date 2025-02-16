@@ -71,8 +71,8 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 			return nil
 		}),
 		chromedp.WaitVisible(`memberweb-booking-review-modal .btn-primary .cost`, chromedp.ByQuery),
-		// chromedp.Click(`memberweb-booking-review-modal .btn-primary`, chromedp.ByQuery),
-		// chromedp.Click(`//button[text()="Done"]`, chromedp.BySearch),
+		chromedp.Click(`memberweb-booking-review-modal .btn-primary`, chromedp.ByQuery),
+		chromedp.Click(`//button[text()="Done"]`, chromedp.BySearch),
 	)
 }
 
