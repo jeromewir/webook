@@ -28,7 +28,10 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 		log.Println("Received booking request for", date)
 
 		// Validate the date format (e.g., "Feb 18, 2025")
-		if !isValidDate(date) {
+		dateString, err := isValidDate(date)
+
+		if err != nil {
+			log.Println(err)
 			http.Error(w, "Invalid date format. Expected format: 'Feb 18, 2025'", http.StatusBadRequest)
 			return
 		}
@@ -57,24 +60,29 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 
 		log.Println("Making booking")
 
-		if err := makeBooking(taskCtx, coworkingName, date); err != nil {
+		if err := makeBooking(taskCtx, coworkingName, dateString); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		log.Println("Booking successful for date:", date)
+		log.Println("Booking successful for date:", dateString)
 
 		// If the date is valid, respond with success
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprintf(w, "Booking successful for date: %s", date)
+		fmt.Fprintf(w, "Booking successful for date: %s", dateString)
 	}
 }
 
 // isValidDate validates the date string against the format "Feb 18, 2025"
-func isValidDate(date string) bool {
+func isValidDate(date string) (string, error) {
 	const layout = "Jan 2, 2006"
-	_, err := time.Parse(layout, date)
+	d, err := time.Parse(layout, date)
 
-	return err == nil
+	if err != nil {
+		return "", err
+	}
+
+	// Reformating the date so we don't have Mar 03, 2025 which does not work
+	return d.Format("Jan 2, 2006"), nil
 }
