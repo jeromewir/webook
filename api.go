@@ -28,7 +28,7 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 		log.Println("Received booking request for", date)
 
 		// Validate the date format (e.g., "Feb 18, 2025")
-		dateString, err := isValidDate(date)
+		dateString, err := reformatDate(date)
 
 		if err != nil {
 			log.Println(err)
@@ -56,6 +56,15 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
+			log.Println("Navigating to bookings page")
+
+			chromedp.Run(taskCtx,
+				// Wait for page to load, so cookies are set
+				chromedp.WaitReady(`//h2[text()="Building Information"]`, chromedp.BySearch),
+				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
+				chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery),
+			)
 		}
 
 		log.Println("Making booking")
@@ -74,8 +83,8 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 	}
 }
 
-// isValidDate validates the date string against the format "Feb 18, 2025"
-func isValidDate(date string) (string, error) {
+// reformatDate validates the date string against the format "Feb 18, 2025"
+func reformatDate(date string) (string, error) {
 	const layout = "Jan 2, 2006"
 	d, err := time.Parse(layout, date)
 
