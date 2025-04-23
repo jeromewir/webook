@@ -72,6 +72,18 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 		}),
 		chromedp.WaitVisible(`memberweb-booking-review-modal .btn-primary .cost`, chromedp.ByQuery),
 		chromedp.Click(`memberweb-booking-review-modal .btn-primary`, chromedp.ByQuery),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// We're waiting for a potential modal to appear, when we don't have enough credits
+			wCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="OK"]`, chromedp.BySearch).Do(wCtx); err != nil {
+				log.Println("No modal appeared", err)
+				return nil
+			}
+			log.Println("Clicked OK")
+
+			return nil
+		}),
 		chromedp.Click(`//button[text()="Done"]`, chromedp.BySearch),
 	)
 }
