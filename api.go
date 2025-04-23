@@ -12,6 +12,7 @@ import (
 
 func registerBookHandler(allocCtx context.Context, email string, password string, coworkingName string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received booking request", r.Method)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
