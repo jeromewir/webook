@@ -10,6 +10,43 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+func withRetries(originalOpCtx context.Context, attempts int, sleep time.Duration, operationName string, fn func(attemptCtx context.Context) error) error {
+    var lastErr error
+    for i := 0; i < attempts; i++ {
+        if i > 0 {
+            // Check if the original context has been cancelled before sleeping or retrying
+            if originalOpCtx.Err() != nil {
+                log.Printf("Context cancelled before retrying operation '%s' (attempt %d/%d). Last error: %v", operationName, i+1, attempts, lastErr)
+                // If lastErr is nil, it means context was cancelled before first retry, return context error.
+                // Otherwise, prefer returning the actual last operational error.
+                if lastErr == nil {
+                    return originalOpCtx.Err()
+                }
+                return lastErr
+            }
+            log.Printf("Retrying operation '%s' (attempt %d/%d) after error: %v", operationName, i+1, attempts, lastErr)
+            time.Sleep(sleep)
+        }
+        
+        // Check if the original context has been cancelled just before the current attempt
+        if originalOpCtx.Err() != nil {
+            log.Printf("Context cancelled before attempting operation '%s' (attempt %d/%d). Last error (if any): %v", operationName, i+1, attempts, lastErr)
+            if lastErr == nil {
+                 return originalOpCtx.Err()
+            }
+            return lastErr
+        }
+
+        lastErr = fn(originalOpCtx) // Pass the original context to each attempt of fn
+        
+        if lastErr == nil {
+            return nil // Success
+        }
+    }
+    log.Printf("Operation '%s' failed after %d attempts, last error: %v", operationName, attempts, lastErr)
+    return lastErr // All attempts failed
+}
+
 const PageLogin = "login"
 const PageReserve = "reserve"
 
@@ -89,87 +126,70 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 }
 
 func getCoworkingIDFromName(ctx context.Context, coworkingName string) (string, error) {
-	var err error
-	var liID string
+    var liID string
 
-	originalCtx := ctx // Preserve original context for retries
-	for i := 0; i < 3; i++ {
-		if i > 0 {
-			log.Printf("Retrying getCoworkingIDFromName... attempt %d", i+1)
-			time.Sleep(2 * time.Second)
-		}
+    operationToRetry := func(attemptCtx context.Context) error { // attemptCtx is the ctx from withRetries (i.e., getCoworkingIDFromName's original ctx)
+        // Create a new 10-second timeout context for this specific chromedp.Run attempt, derived from attemptCtx
+        opCtx, cancel := context.WithTimeout(attemptCtx, 10*time.Second)
+        defer cancel()
 
-		ctx, cancel := context.WithTimeout(originalCtx, 10*time.Second)
+        err := chromedp.Run(opCtx, // Use the 10s opCtx here for this attempt
+            chromedp.AttributeValue(fmt.Sprintf(`//div[text()='%s']/ancestor::li`, coworkingName), "id", &liID, nil),
+        )
+        return err
+    }
 
-		err = chromedp.Run(ctx,
-			chromedp.AttributeValue(fmt.Sprintf(`//div[text()='%s']/ancestor::li`, coworkingName), "id", &liID, nil),
-		)
-		cancel() // Ensure cancel is called regardless of error
-
-		if err == nil {
-			break // Success
-		}
-	}
-
-	if err != nil {
-		return "", err
-	}
-
-	return liID, nil
+    err := withRetries(ctx, 3, 2*time.Second, fmt.Sprintf("getCoworkingIDFromName for '%s'", coworkingName), operationToRetry)
+    return liID, err
 }
 
 func getPage(ctx context.Context) (string, error) {
-	var err error
-	currentPage := ""
+    var currentPage string
 
-	for i := 0; i < 3; i++ {
-		if i > 0 {
-			log.Printf("Retrying getPage... attempt %d", i+1)
-			time.Sleep(2 * time.Second)
-		}
-		err = chromedp.Run(ctx,
-			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
+    operationToRetry := func(attemptCtx context.Context) error { // attemptCtx is the ctx from withRetries (i.e., getPage's original ctx)
+        errRun := chromedp.Run(attemptCtx, // This context is used for the overall chromedp.Run
+            chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
+            chromedp.ActionFunc(func(runCtx context.Context) error { // runCtx is from chromedp.Run, derived from attemptCtx
+                // This is the 10-second timeout for the actual page interaction for this attempt
+                pageLoadCtx, cancel := context.WithTimeout(runCtx, 10*time.Second)
+                defer cancel()
 
-				resultCh := make(chan string, 1)
+                resultCh := make(chan string, 1)
 
-			go func() {
-				chromedp.WaitVisible(`//button[text()="Member log in"]`, chromedp.BySearch).Do(ctx)
-				select {
-				case resultCh <- PageLogin:
-				case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
-				}
-			}()
-			go func() {
-				chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery).Do(ctx)
-				select {
-				case resultCh <- PageReserve:
-				case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
-				}
-			}()
+                go func() {
+                    if err := chromedp.WaitVisible(`//button[text()="Member log in"]`, chromedp.BySearch).Do(pageLoadCtx); err == nil {
+                        select {
+                        case resultCh <- PageLogin:
+                        case <-pageLoadCtx.Done():
+                        }
+                    } else if pageLoadCtx.Err() == nil { // Error from WaitVisible, but pageLoadCtx itself not timed out
+                        // log.Printf("Debug: Login element not found or other error: %v", err)
+                    }
+                }()
 
-				select {
-				case result := <-resultCh:
-					currentPage = result
-				case <-ctx.Done():
-					return errors.New("timed out waiting for page to load")
-				}
+                go func() {
+                    if err := chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery).Do(pageLoadCtx); err == nil {
+                        select {
+                        case resultCh <- PageReserve:
+                        case <-pageLoadCtx.Done():
+                        }
+                    } else if pageLoadCtx.Err() == nil { // Error from WaitReady, but pageLoadCtx itself not timed out
+                        // log.Printf("Debug: Reserve element not found or other error: %v", err)
+                    }
+                }()
 
-				return nil
-			}),
-		)
-		if err == nil {
-			break
-		}
-		if err.Error() != "timed out waiting for page to load" {
-			break
-		}
-	}
-	if err != nil {
-		return "", err
-	}
-
-	return currentPage, nil
+                select {
+                case res := <-resultCh:
+                    currentPage = res
+                    return nil
+                case <-pageLoadCtx.Done():
+                    return errors.New("timed out waiting for page to load") // This error will be retried by withRetries
+                }
+            }),
+        )
+        return errRun
+    }
+    
+    err := withRetries(ctx, 3, 2*time.Second, "getPageLoad", operationToRetry)
+    return currentPage, err
 }
