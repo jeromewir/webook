@@ -89,14 +89,29 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 }
 
 func getCoworkingIDFromName(ctx context.Context, coworkingName string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	var err error
+	var liID string
 
-	liID := ""
+	originalCtx := ctx // Preserve original context for retries
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			log.Printf("Retrying getCoworkingIDFromName... attempt %d", i+1)
+			time.Sleep(2 * time.Second)
+		}
 
-	if err := chromedp.Run(ctx,
-		chromedp.AttributeValue(fmt.Sprintf(`//div[text()='%s']/ancestor::li`, coworkingName), "id", &liID, nil),
-	); err != nil {
+		ctx, cancel := context.WithTimeout(originalCtx, 10*time.Second)
+
+		err = chromedp.Run(ctx,
+			chromedp.AttributeValue(fmt.Sprintf(`//div[text()='%s']/ancestor::li`, coworkingName), "id", &liID, nil),
+		)
+		cancel() // Ensure cancel is called regardless of error
+
+		if err == nil {
+			break // Success
+		}
+	}
+
+	if err != nil {
 		return "", err
 	}
 
@@ -104,15 +119,21 @@ func getCoworkingIDFromName(ctx context.Context, coworkingName string) (string, 
 }
 
 func getPage(ctx context.Context) (string, error) {
+	var err error
 	currentPage := ""
 
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			log.Printf("Retrying getPage... attempt %d", i+1)
+			time.Sleep(2 * time.Second)
+		}
+		err = chromedp.Run(ctx,
+			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
 
-			resultCh := make(chan string, 1)
+				resultCh := make(chan string, 1)
 
 			go func() {
 				chromedp.WaitVisible(`//button[text()="Member log in"]`, chromedp.BySearch).Do(ctx)
@@ -129,16 +150,24 @@ func getPage(ctx context.Context) (string, error) {
 				}
 			}()
 
-			select {
-			case result := <-resultCh:
-				currentPage = result
-			case <-ctx.Done():
-				return errors.New("timed out waiting for page to load")
-			}
+				select {
+				case result := <-resultCh:
+					currentPage = result
+				case <-ctx.Done():
+					return errors.New("timed out waiting for page to load")
+				}
 
-			return nil
-		}),
-	); err != nil {
+				return nil
+			}),
+		)
+		if err == nil {
+			break
+		}
+		if err.Error() != "timed out waiting for page to load" {
+			break
+		}
+	}
+	if err != nil {
 		return "", err
 	}
 
