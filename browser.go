@@ -112,7 +112,7 @@ func getPage(ctx context.Context) (string, error) {
 		return chromedp.Run(ctx,
 			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 
 				resultCh := make(chan string, 1)
