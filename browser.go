@@ -26,7 +26,6 @@ func login(ctx context.Context, email string, password string) error {
 		// Clear the input field before setting the value, when cookies are persent and logged out, this is preset
 		chromedp.SetValue(`input[type="email"][id="1-email"]`, "", chromedp.ByQuery),
 		chromedp.SendKeys(`input[type="email"][id="1-email"]`, email, chromedp.ByQuery),
-		chromedp.SetAttributeValue(`input[type="email"][id="1-email"]`, "value", email, chromedp.ByQuery),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			log.Println("Filled email")
 			return nil
