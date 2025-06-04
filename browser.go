@@ -23,7 +23,10 @@ func login(ctx context.Context, email string, password string) error {
 			return nil
 		}),
 		chromedp.Click(`input[type="email"][id="1-email"]`, chromedp.ByQuery),
+		// Clear the input field before setting the value, when cookies are persent and logged out, this is preset
+		chromedp.SetValue(`input[type="email"][id="1-email"]`, "", chromedp.ByQuery),
 		chromedp.SendKeys(`input[type="email"][id="1-email"]`, email, chromedp.ByQuery),
+		chromedp.SetAttributeValue(`input[type="email"][id="1-email"]`, "value", email, chromedp.ByQuery),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			log.Println("Filled email")
 			return nil
@@ -106,40 +109,46 @@ func getCoworkingIDFromName(ctx context.Context, coworkingName string) (string, 
 func getPage(ctx context.Context) (string, error) {
 	currentPage := ""
 
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
+	run := func(ctx context.Context) error {
+		return chromedp.Run(ctx,
+			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
 
-			resultCh := make(chan string, 1)
+				resultCh := make(chan string, 1)
 
-			go func() {
-				chromedp.WaitVisible(`//button[text()="Member log in"]`, chromedp.BySearch).Do(ctx)
+				go func() {
+					chromedp.WaitVisible(`//button[text()="Member log in"]`, chromedp.BySearch).Do(ctx)
+					select {
+					case resultCh <- PageLogin:
+					case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
+					}
+				}()
+				go func() {
+					chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery).Do(ctx)
+					select {
+					case resultCh <- PageReserve:
+					case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
+					}
+				}()
+
 				select {
-				case resultCh <- PageLogin:
-				case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
+				case result := <-resultCh:
+					currentPage = result
+				case <-ctx.Done():
+					return errors.New("timed out waiting for page to load")
 				}
-			}()
-			go func() {
-				chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery).Do(ctx)
-				select {
-				case resultCh <- PageReserve:
-				case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
-				}
-			}()
 
-			select {
-			case result := <-resultCh:
-				currentPage = result
-			case <-ctx.Done():
-				return errors.New("timed out waiting for page to load")
-			}
+				return nil
+			}))
+	}
 
-			return nil
-		}),
-	); err != nil {
-		return "", err
+	if err := run(ctx); err != nil {
+		log.Println("Error navigating to bookings page:", err)
+
+		// Retry one more time
+		return currentPage, run(ctx)
 	}
 
 	return currentPage, nil
