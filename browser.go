@@ -78,7 +78,7 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 			// We're waiting for a potential modal to appear, when we don't have enough credits
 			wCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
-			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="OK"]`, chromedp.BySearch).Do(wCtx); err != nil {
+			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="Book"]`, chromedp.BySearch).Do(wCtx); err != nil {
 				log.Println("No modal appeared", err)
 				return nil
 			}
