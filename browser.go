@@ -13,38 +13,106 @@ import (
 const PageLogin = "login"
 const PageReserve = "reserve"
 
+var ErrDateInOlderThanOneMonthFuture = errors.New("date is more than 31 days in the future")
+
 func login(ctx context.Context, email string, password string) error {
 	return chromedp.Run(ctx,
 		chromedp.Click(`//button[text()="Member log in"]`, chromedp.BySearch),
-		chromedp.WaitReady(`input[type="email"][id="1-email"]`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second),
+		raceItemsChromeFn(ctx, []BrowserSwitchAction{
+			{
+				Checker: func(ctx context.Context) {
+					chromedp.WaitReady(`input[id="username"][value=""]`, chromedp.ByQuery).Do(ctx)
+				},
+				Action: func(ctx context.Context) {
+					chromedp.Run(ctx,
+						chromedp.Click(`input[id="username"]`, chromedp.ByQuery),
+						chromedp.SetValue(`input[id="username"]`, "", chromedp.ByQuery),
+						chromedp.SendKeys(`input[id="username"]`, email, chromedp.ByQuery),
+						chromedp.Sleep(500*time.Millisecond),
+						chromedp.ActionFunc(func(ctx context.Context) error {
+							log.Println("Filled email")
+							return nil
+						}),
+						chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
+					)
+				},
+			},
+			{
+				Checker: func(ctx context.Context) {
+					chromedp.WaitReady(`input[name="username"][readonly]`, chromedp.ByQuery).Do(ctx)
+				},
+				Action: func(ctx context.Context) {
+					log.Println("Username is already filled")
+				},
+			},
+		}, 5*time.Second),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			log.Println("waiting for login form")
 			return nil
 		}),
-		chromedp.Click(`input[type="email"][id="1-email"]`, chromedp.ByQuery),
-		// Clear the input field before setting the value, when cookies are persent and logged out, this is preset
-		chromedp.SetValue(`input[type="email"][id="1-email"]`, "", chromedp.ByQuery),
-		chromedp.SendKeys(`input[type="email"][id="1-email"]`, email, chromedp.ByQuery),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Filled email")
-			return nil
-		}),
-		chromedp.SendKeys(`input[type="password"][id="1-password"]`, password, chromedp.ByQuery),
-		chromedp.Click(`button[type="submit"][id="1-submit"]`, chromedp.ByQuery),
+		chromedp.WaitReady(`input[id="password"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`input[id="password"]`, password, chromedp.ByQuery),
+		chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
 	)
 }
 
 func makeBooking(ctx context.Context, coworkingName string, date string) error {
+	layout := "Jan 2, 2006"
+	// We do not need to check the error as this was already checked
+	d, _ := time.Parse(layout, date)
+
+	now := time.Now()
+
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`yardi-control-date input`, date, chromedp.ByQuery),
+		chromedp.WaitVisible(`wework-booking-desk-memberweb .row .loading-block`),
+		chromedp.WaitNotPresent(`wework-booking-desk-memberweb .row .loading-block`),
+		chromedp.Click(`button[type="button"][class="btn-calendar"]`),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Filled date and waited")
+			monthBtn := fmt.Sprintf(`dl-date-time-picker div[aria-label="%s"]`, d.Format("Jan 2006"))
+
+			// Check if the date is in more than one month, otherwise return an error
+			if d.Sub(now) > 31*24*time.Hour {
+				return ErrDateInOlderThanOneMonthFuture
+			}
+
+			if d.Year() != now.Year() {
+				yearBtn := fmt.Sprintf(`button[type="button"][title="Go to %d"]`, now.Year())
+
+				chromedp.Run(ctx,
+					chromedp.Click(`button[type="button"][title="Go to month view"]`),
+					chromedp.WaitVisible(yearBtn),
+					chromedp.Click(yearBtn),
+					chromedp.Click(fmt.Sprintf("//dl-date-time-picker//div[text()='%d']", d.Year())),
+				)
+
+				log.Println("Clicked on year", d.Year())
+			}
+
+			if d.Month() != now.Month() && d.Year() == now.Year() {
+				chromedp.Run(ctx,
+					chromedp.Click(`button[type="button"][title="Go to month view"]`),
+				)
+				log.Println("Clicked on month view button")
+			}
+
+			if d.Month() != now.Month() || d.Year() != now.Year() {
+				chromedp.Run(ctx,
+					chromedp.WaitReady(monthBtn),
+					chromedp.Click(monthBtn),
+				)
+				log.Println("Clicked on month")
+			}
+
+			dayBtn := fmt.Sprintf("dl-date-time-picker div[aria-label='%s %d, %d']", d.Format("Jan"), d.Day(), d.Year())
+
+			chromedp.Run(ctx,
+				chromedp.Click(dayBtn),
+			)
+
 			return nil
 		}),
-		chromedp.WaitVisible(`#main-content .loading-block`, chromedp.ByQuery),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Loading block visible")
+			log.Println("Filled date and waited")
 			return nil
 		}),
 	); err != nil {
@@ -78,7 +146,7 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 			// We're waiting for a potential modal to appear, when we don't have enough credits
 			wCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
-			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="OK"]`, chromedp.BySearch).Do(wCtx); err != nil {
+			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="Book"]`, chromedp.BySearch).Do(wCtx); err != nil {
 				log.Println("No modal appeared", err)
 				return nil
 			}
@@ -151,4 +219,42 @@ func getPage(ctx context.Context) (string, error) {
 	}
 
 	return currentPage, nil
+}
+
+// This holds the checker and the action that should be done when true
+type BrowserSwitchAction struct {
+	Checker func(ctx context.Context)
+	Action  func(ctx context.Context)
+}
+
+func raceItems(ctx context.Context, actions []BrowserSwitchAction, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	resultCh := make(chan int, 1)
+
+	for i, action := range actions {
+		go func(ctx context.Context) {
+			action.Checker(ctx)
+			select {
+			case resultCh <- i:
+			case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled
+			}
+		}(ctx)
+	}
+
+	select {
+	case result := <-resultCh:
+		actions[result].Action(ctx)
+	case <-ctx.Done():
+		return errors.New("timed out waiting for page to load")
+	}
+
+	return nil
+}
+
+func raceItemsChromeFn(ctx context.Context, actions []BrowserSwitchAction, timeout time.Duration) chromedp.ActionFunc {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return raceItems(ctx, actions, timeout)
+	})
 }

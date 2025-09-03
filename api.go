@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -70,6 +71,11 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 		log.Println("Making booking")
 
 		if err := makeBooking(taskCtx, coworkingName, dateString); err != nil {
+			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
