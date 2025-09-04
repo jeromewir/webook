@@ -103,11 +103,13 @@ func makeBooking(ctx context.Context, coworkingName string, date string) error {
 				log.Println("Clicked on month")
 			}
 
-			dayBtn := fmt.Sprintf("dl-date-time-picker div[aria-label='%s %d, %d']", d.Format("Jan"), d.Day(), d.Year())
+			if d.Day() != now.Day() {
+				dayBtn := fmt.Sprintf("dl-date-time-picker div[aria-label='%s %d, %d']", d.Format("Jan"), d.Day(), d.Year())
 
-			chromedp.Run(ctx,
-				chromedp.Click(dayBtn),
-			)
+				chromedp.Run(ctx,
+					chromedp.Click(dayBtn),
+				)
+			}
 
 			return nil
 		}),
