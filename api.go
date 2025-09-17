@@ -54,6 +54,7 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 			log.Println("Logging in")
 
 			if err := login(taskCtx, email, password); err != nil {
+				log.Println("Login failed:", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}

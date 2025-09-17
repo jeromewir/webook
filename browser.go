@@ -23,12 +23,12 @@ func login(ctx context.Context, email string, password string) error {
 				Checker: func(ctx context.Context) {
 					chromedp.WaitReady(`input[id="username"][value=""]`, chromedp.ByQuery).Do(ctx)
 				},
-				Action: func(ctx context.Context) {
-					chromedp.Run(ctx,
+				Action: func(ctx context.Context) error {
+					return chromedp.Run(ctx,
+						chromedp.Sleep(2*time.Second),
 						chromedp.Click(`input[id="username"]`, chromedp.ByQuery),
-						chromedp.SetValue(`input[id="username"]`, "", chromedp.ByQuery),
-						chromedp.SendKeys(`input[id="username"]`, email, chromedp.ByQuery),
-						chromedp.Sleep(500*time.Millisecond),
+						chromedp.Clear(`input[id="username"]`, chromedp.ByQuery),
+						chromedp.SetValue(`input[id="username"]`, email, chromedp.ByQuery),
 						chromedp.ActionFunc(func(ctx context.Context) error {
 							log.Println("Filled email")
 							return nil
@@ -41,8 +41,9 @@ func login(ctx context.Context, email string, password string) error {
 				Checker: func(ctx context.Context) {
 					chromedp.WaitReady(`input[name="username"][readonly]`, chromedp.ByQuery).Do(ctx)
 				},
-				Action: func(ctx context.Context) {
+				Action: func(ctx context.Context) error {
 					log.Println("Username is already filled")
+					return nil
 				},
 			},
 		}, 5*time.Second),
@@ -226,7 +227,7 @@ func getPage(ctx context.Context) (string, error) {
 // This holds the checker and the action that should be done when true
 type BrowserSwitchAction struct {
 	Checker func(ctx context.Context)
-	Action  func(ctx context.Context)
+	Action  func(ctx context.Context) error
 }
 
 func raceItems(ctx context.Context, actions []BrowserSwitchAction, timeout time.Duration) error {
@@ -247,12 +248,10 @@ func raceItems(ctx context.Context, actions []BrowserSwitchAction, timeout time.
 
 	select {
 	case result := <-resultCh:
-		actions[result].Action(ctx)
+		return actions[result].Action(ctx)
 	case <-ctx.Done():
 		return errors.New("timed out waiting for page to load")
 	}
-
-	return nil
 }
 
 func raceItemsChromeFn(ctx context.Context, actions []BrowserSwitchAction, timeout time.Duration) chromedp.ActionFunc {
