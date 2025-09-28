@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -57,123 +56,30 @@ func login(ctx context.Context, email string, password string) error {
 	)
 }
 
-func makeBooking(ctx context.Context, coworkingName string, date string) error {
+func makeBooking(ctx context.Context, coworkingLocationID string, date string) error {
 	layout := "Jan 2, 2006"
 	// We do not need to check the error as this was already checked
 	d, _ := time.Parse(layout, date)
 
 	now := time.Now()
 
-	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(`wework-booking-desk-memberweb .row .loading-block`),
-		chromedp.WaitNotPresent(`wework-booking-desk-memberweb .row .loading-block`),
-		chromedp.Click(`button[type="button"][class="btn-calendar"]`),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			monthBtn := fmt.Sprintf(`dl-date-time-picker div[aria-label="%s"]`, d.Format("Jan 2006"))
-
-			// Check if the date is in more than one month, otherwise return an error
-			if d.Sub(now) > 31*24*time.Hour {
-				return ErrDateInOlderThanOneMonthFuture
-			}
-
-			if d.Year() != now.Year() {
-				yearBtn := fmt.Sprintf(`button[type="button"][title="Go to %d"]`, now.Year())
-
-				chromedp.Run(ctx,
-					chromedp.Click(`button[type="button"][title="Go to month view"]`),
-					chromedp.WaitVisible(yearBtn),
-					chromedp.Click(yearBtn),
-					chromedp.Click(fmt.Sprintf("//dl-date-time-picker//div[text()='%d']", d.Year())),
-				)
-
-				log.Println("Clicked on year", d.Year())
-			}
-
-			if d.Month() != now.Month() && d.Year() == now.Year() {
-				chromedp.Run(ctx,
-					chromedp.Click(`button[type="button"][title="Go to month view"]`),
-				)
-				log.Println("Clicked on month view button")
-			}
-
-			if d.Month() != now.Month() || d.Year() != now.Year() {
-				chromedp.Run(ctx,
-					chromedp.WaitReady(monthBtn),
-					chromedp.Click(monthBtn),
-				)
-				log.Println("Clicked on month")
-			}
-
-			if d.Day() != now.Day() {
-				dayBtn := fmt.Sprintf("dl-date-time-picker div[aria-label='%s %d, %d']", d.Format("Jan"), d.Day(), d.Year())
-
-				chromedp.Run(ctx,
-					chromedp.Click(dayBtn),
-				)
-			}
-
-			return nil
-		}),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Filled date and waited")
-			return nil
-		}),
-	); err != nil {
-		return err
+	if d.Sub(now) > 31*24*time.Hour {
+		return ErrDateInOlderThanOneMonthFuture
 	}
 
-	coworkingID, err := getCoworkingIDFromName(ctx, coworkingName)
+	bearerToken, err := getBearerToken(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Retrieved coworking ID from name (%s): %s\n", coworkingName, coworkingID)
+	weworkLocation, err := FetchWeWorkLocation(ctx, bearerToken, coworkingLocationID)
 
-	baseLi := fmt.Sprintf(`#main-content li[id="%s"]`, coworkingID)
-
-	return chromedp.Run(ctx,
-		chromedp.WaitVisible(baseLi, chromedp.ByQuery),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Booking visible")
-			return nil
-		}),
-		chromedp.Evaluate(fmt.Sprintf(`document.querySelector('li[id="%s"] span[role="button"]').click()`, coworkingID), nil),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Println("Clicked")
-			return nil
-		}),
-		chromedp.WaitVisible(`memberweb-booking-review-modal .btn-primary .cost`, chromedp.ByQuery),
-		chromedp.Click(`memberweb-booking-review-modal .btn-primary`, chromedp.ByQuery),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// We're waiting for a potential modal to appear, when we don't have enough credits
-			wCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
-			if err := chromedp.Click(`//div[contains(@class, "modal-footer")]//button[text()="Book"]`, chromedp.BySearch).Do(wCtx); err != nil {
-				log.Println("No modal appeared", err)
-				return nil
-			}
-			log.Println("Clicked OK")
-
-			return nil
-		}),
-		chromedp.Click(`//button[text()="Done"]`, chromedp.BySearch),
-	)
-}
-
-func getCoworkingIDFromName(ctx context.Context, coworkingName string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	liID := ""
-
-	if err := chromedp.Run(ctx,
-		chromedp.AttributeValue(fmt.Sprintf(`//div[text()='%s']/ancestor::li`, coworkingName), "id", &liID, nil),
-	); err != nil {
-		return "", err
+	if err != nil {
+		return err
 	}
 
-	return liID, nil
+	return makeBookingRequest(ctx, bearerToken, d, weworkLocation)
 }
 
 func getPage(ctx context.Context) (string, error) {
@@ -181,7 +87,7 @@ func getPage(ctx context.Context) (string, error) {
 
 	run := func(ctx context.Context) error {
 		return chromedp.Run(ctx,
-			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
+			chromedp.Navigate(`https://members.wework.com/workplaceone/content2/your-bookings`),
 			chromedp.ActionFunc(func(ctx context.Context) error {
 				ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
@@ -196,7 +102,7 @@ func getPage(ctx context.Context) (string, error) {
 					}
 				}()
 				go func() {
-					chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery).Do(ctx)
+					chromedp.WaitReady(`wework-ondemand-my-bookings`, chromedp.ByQuery).Do(ctx)
 					select {
 					case resultCh <- PageReserve:
 					case <-ctx.Done(): // Ensure no goroutine hangs if the context is canceled

@@ -20,17 +20,17 @@ func main() {
 
 	email := os.Getenv("WEWORK_EMAIL")
 	password := os.Getenv("WEWORK_PASSWORD")
-	coworkingName := os.Getenv("WEWORK_COWORKING_NAME")
+	coworkingLocationID := os.Getenv("WEWORK_COWORKING_LOCATION_ID")
 
-	if email == "" || password == "" || coworkingName == "" {
-		log.Fatal("WEWORK_EMAIL, WEWORK_PASSWORD and WEWORK_CORWORKING_NAME must be set")
+	if email == "" || password == "" || coworkingLocationID == "" {
+		log.Fatal("WEWORK_EMAIL, WEWORK_PASSWORD and WEWORK_COWORKING_LOCATION_ID must be set")
 	}
 
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
 
 	// also set up a custom logger
-	http.HandleFunc("/api/book", registerBookHandler(allocCtx, email, password, coworkingName))
+	http.HandleFunc("/api/book", registerBookHandler(allocCtx, email, password, coworkingLocationID))
 	log.Println("Starting server on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
