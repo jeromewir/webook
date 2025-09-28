@@ -11,7 +11,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func registerBookHandler(allocCtx context.Context, email string, password string, coworkingName string) func(w http.ResponseWriter, r *http.Request) {
+func registerBookHandler(allocCtx context.Context, email string, password string, coworkingLocationID string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -64,14 +64,14 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 			chromedp.Run(taskCtx,
 				// Wait for page to load, so cookies are set
 				chromedp.WaitReady(`//h2[text()="Building Information"]`, chromedp.BySearch),
-				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/bookings/desks`),
-				chromedp.WaitReady(`wework-member-web-city-selector`, chromedp.ByQuery),
+				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/your-bookings`),
+				chromedp.WaitReady(`wework-ondemand-my-bookings`, chromedp.ByQuery),
 			)
 		}
 
 		log.Println("Making booking")
 
-		if err := makeBooking(taskCtx, coworkingName, dateString); err != nil {
+		if err := makeBooking(taskCtx, coworkingLocationID, dateString); err != nil {
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
