@@ -9,6 +9,7 @@ RUN go build -o /home/app .
 
 FROM chromedp/headless-shell:latest
 
+COPY --from=0 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=0 /home/app /home/app
 
 ENTRYPOINT ["/home/app"]
