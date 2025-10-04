@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/eko/gocache/lib/v4/cache"
 )
 
-func registerBookHandler(allocCtx context.Context, email string, password string, coworkingLocationID string) func(w http.ResponseWriter, r *http.Request) {
+func registerBookHandler(allocCtx context.Context, email string, password string, coworkingLocationID string, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -63,15 +64,14 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 
 			chromedp.Run(taskCtx,
 				// Wait for page to load, so cookies are set
-				chromedp.WaitReady(`//h2[text()="Building Information"]`, chromedp.BySearch),
-				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/your-bookings`),
-				chromedp.WaitReady(`wework-ondemand-my-bookings`, chromedp.ByQuery),
+				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/wework-support`),
+				chromedp.WaitReady(`wework-ondemand-support`, chromedp.ByQuery),
 			)
 		}
 
 		log.Println("Making booking")
 
-		if err := makeBooking(taskCtx, coworkingLocationID, dateString); err != nil {
+		if err := makeBooking(taskCtx, coworkingLocationID, dateString, cacheManager); err != nil {
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
