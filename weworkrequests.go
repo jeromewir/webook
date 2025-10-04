@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -153,40 +152,25 @@ func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (
 func getBearerToken(ctx context.Context) (string, error) {
 	var token string
 
-	restyClient := resty.New()
-
-	var weworkConfigResponse struct {
-		AuthorizationParams struct {
-			Scope string `json:"scope"`
-		}
-		ClientID string `json:"clientId"`
-	}
-
-	response, err := restyClient.R().SetContext(ctx).SetResult(&weworkConfigResponse).
-		Get("https://members.wework.com/workplaceone/api/auth0/v2/config?domain=members.wework.com")
-
-	if err != nil {
-		return "", err
-	}
-
-	if response.IsError() {
-		return "", fmt.Errorf("error fetching auth0 config: %s", response.Status())
-	}
-
-	log.Printf("Fetched Auth0 config: clientID=%s, scope=%s\n", weworkConfigResponse.ClientID, weworkConfigResponse.AuthorizationParams.Scope)
-
-	itemLocation := fmt.Sprintf("@@auth0spajs@@::%s::wework::%s", weworkConfigResponse.ClientID, "openid "+weworkConfigResponse.AuthorizationParams.Scope)
-
 	if err := chromedp.Run(ctx,
-		chromedp.EvaluateAsDevTools(fmt.Sprintf(`(function() {
-			const items = localStorage.getItem('%s');
+		chromedp.EvaluateAsDevTools(`(function() {
+			const baseItems = localStorage.getItem('Auth0Config');
+			
+			if (!baseItems) {
+				throw new Error("could not find Auth0Config in local storage");
+			}
+			const config = JSON.parse(baseItems);
+
+			const { clientId, authorizationParams: { scope } } = config;
+
+			const items = localStorage.getItem('@@auth0spajs@@::' + clientId + '::wework::openid ' + scope);
 
 			if (!items) {
 				throw new Error("could not find auth0 items in local storage");
 			}
 
 			return JSON.parse(items).body.access_token;
-		})()`, itemLocation), &token),
+		})()`, &token),
 	); err != nil {
 		return "", err
 	}
