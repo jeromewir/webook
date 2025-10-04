@@ -266,22 +266,22 @@ func makeBookingRequest(ctx context.Context, token string, date time.Time, space
 
 	request.SetBody(requestData)
 
-	// var bookingResponse BookingResponse
+	var bookingResponse BookingResponse
 
-	// response, err := request.SetResult(&bookingResponse).
-	// 	Post("https://members.wework.com/workplaceone/api/common-booking/")
+	response, err := request.SetResult(&bookingResponse).
+		Post("https://members.wework.com/workplaceone/api/common-booking/")
 
-	// if err != nil {
-	// 	return err
-	// }
+	if err != nil {
+		return err
+	}
 
-	// if response.IsError() {
-	// 	return fmt.Errorf("error making booking request: %s", response.Status())
-	// }
+	if response.IsError() {
+		return fmt.Errorf("error making booking request: %s", response.Status())
+	}
 
-	// if bookingResponse.BookingStatus != "BookingSuccess" {
-	// 	return fmt.Errorf("booking not confirmed: %v", bookingResponse.Errors)
-	// }
+	if bookingResponse.BookingStatus != "BookingSuccess" {
+		return fmt.Errorf("booking not confirmed: %v", bookingResponse.Errors)
+	}
 
 	return nil
 }
