@@ -230,7 +230,7 @@ type BookingResponse struct {
 // and returns the offset in hours as a float64
 func parseTimezoneOffset(tzOffset string) (float64, error) {
 	// Match patterns like "GMT +02:00", "GMT +2:00", "GMT -05:00", etc.
-	re := regexp.MustCompile(`GMT\s*([+-])(\d{1,2}):(\d{2})`)
+	re := regexp.MustCompile(`([+-])(\d{1,2}):(\d{2})`)
 	matches := re.FindStringSubmatch(tzOffset)
 
 	if len(matches) != 4 {
