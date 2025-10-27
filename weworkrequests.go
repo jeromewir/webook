@@ -244,7 +244,7 @@ func makeBookingRequest(ctx context.Context, token string, date time.Time, space
 			LocationAddress:    space.Location.Address.Line1,
 			CreditsUsed:        "2",
 			Capacity:           "1",
-			TimezoneUsed:       "GMT +02:00",
+			TimezoneUsed:       space.Location.TimezoneOffset,
 			TimezoneIana:       space.Location.TimeZoneIdentifier,
 			TimezoneWin:        space.Location.TimeZoneWinID,
 			StartDateTime:      fmt.Sprintf("%s 06:00", date.Format(time.DateOnly)),
