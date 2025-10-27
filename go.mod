@@ -7,6 +7,7 @@ require (
 	github.com/eko/gocache/lib/v4 v4.2.1
 	github.com/eko/gocache/store/go_cache/v4 v4.2.2
 	github.com/joho/godotenv v1.5.1
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	resty.dev/v3 v3.0.0-beta.3
 )
 
@@ -34,7 +35,6 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/prometheus/client_golang v1.19.0 // indirect

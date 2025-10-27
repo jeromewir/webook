@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -224,12 +226,79 @@ type BookingResponse struct {
 	WeworkUUID    string   `json:"WeWorkUUID"`
 }
 
+// parseTimezoneOffset parses a timezone offset string like "GMT +02:00" or "GMT -05:00"
+// and returns the offset in hours as a float64
+func parseTimezoneOffset(tzOffset string) (float64, error) {
+	// Match patterns like "GMT +02:00", "GMT +2:00", "GMT -05:00", etc.
+	re := regexp.MustCompile(`([+-])(\d{1,2}):(\d{2})`)
+	matches := re.FindStringSubmatch(tzOffset)
+
+	if len(matches) != 4 {
+		return 0, fmt.Errorf("invalid timezone offset format: %s", tzOffset)
+	}
+
+	sign := matches[1]
+	hours, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, fmt.Errorf("invalid hours in timezone offset: %s", tzOffset)
+	}
+
+	minutes, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return 0, fmt.Errorf("invalid minutes in timezone offset: %s", tzOffset)
+	}
+
+	offset := float64(hours) + float64(minutes)/60.0
+	if sign == "-" {
+		offset = -offset
+	}
+
+	return offset, nil
+}
+
+// calculateUTCTime converts a local time to UTC based on the timezone offset
+// localTime should be in "HH:MM" format, tzOffset like "GMT +02:00"
+func calculateUTCTime(date time.Time, localTime string, tzOffset string) (string, error) {
+	offset, err := parseTimezoneOffset(tzOffset)
+	if err != nil {
+		return "", err
+	}
+
+	// Parse local time (e.g., "06:00" or "23:59")
+	var hour, minute int
+	_, err = fmt.Sscanf(localTime, "%d:%d", &hour, &minute)
+	if err != nil {
+		return "", fmt.Errorf("invalid time format: %s", localTime)
+	}
+
+	// Create a time at the given local time in the location's timezone
+	localDateTime := time.Date(date.Year(), date.Month(), date.Day(), hour, minute, 0, 0, time.UTC)
+
+	// Subtract the offset to get UTC time
+	// If offset is +2, local time is 2 hours ahead of UTC, so UTC = local - 2
+	utcTime := localDateTime.Add(time.Duration(-offset * float64(time.Hour)))
+
+	return utcTime.Format("2006-01-02T15:04:05Z"), nil
+}
+
 func makeBookingRequest(ctx context.Context, token string, date time.Time, space WeWorkLocation) error {
 	request := resty.New().R()
 
 	request.SetAuthToken(token)
 
 	request.SetContext(ctx)
+
+	// Calculate UTC times based on local times and timezone offset
+	// Local start time is 06:00, end time is 23:59
+	startTimeUTC, err := calculateUTCTime(date, "06:00", space.Location.TimezoneOffset)
+	if err != nil {
+		return fmt.Errorf("failed to calculate start time: %w", err)
+	}
+
+	endTimeUTC, err := calculateUTCTime(date, "23:59", space.Location.TimezoneOffset)
+	if err != nil {
+		return fmt.Errorf("failed to calculate end time: %w", err)
+	}
 
 	requestData := BookingRequest{
 		ApplicationType:      "WorkplaceOne",
@@ -244,7 +313,7 @@ func makeBookingRequest(ctx context.Context, token string, date time.Time, space
 			LocationAddress:    space.Location.Address.Line1,
 			CreditsUsed:        "2",
 			Capacity:           "1",
-			TimezoneUsed:       "GMT +02:00",
+			TimezoneUsed:       space.Location.TimezoneOffset,
 			TimezoneIana:       space.Location.TimeZoneIdentifier,
 			TimezoneWin:        space.Location.TimeZoneWinID,
 			StartDateTime:      fmt.Sprintf("%s 06:00", date.Format(time.DateOnly)),
@@ -260,8 +329,8 @@ func makeBookingRequest(ctx context.Context, token string, date time.Time, space
 		LocationID:    space.Location.UUID,
 		SpaceID:       space.Reservable.KubeID,
 		WeWorkSpaceID: space.UUID,
-		StartTime:     fmt.Sprintf("%sT04:00:00Z", date.Format(time.DateOnly)),
-		EndTime:       fmt.Sprintf("%sT21:59:00Z", date.Format(time.DateOnly)),
+		StartTime:     startTimeUTC,
+		EndTime:       endTimeUTC,
 	}
 
 	request.SetBody(requestData)
