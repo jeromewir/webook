@@ -5,7 +5,149 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func TestParseTimezoneOffset(t *testing.T) {
+	tests := []struct {
+		name           string
+		tzOffset       string
+		expectedOffset float64
+		expectError    bool
+	}{
+		{
+			name:           "Summer time GMT+2",
+			tzOffset:       "GMT +02:00",
+			expectedOffset: 2.0,
+			expectError:    false,
+		},
+		{
+			name:           "Winter time GMT+1",
+			tzOffset:       "GMT +01:00",
+			expectedOffset: 1.0,
+			expectError:    false,
+		},
+		{
+			name:           "Negative offset GMT-5",
+			tzOffset:       "GMT -05:00",
+			expectedOffset: -5.0,
+			expectError:    false,
+		},
+		{
+			name:           "No space after GMT",
+			tzOffset:       "GMT+03:00",
+			expectedOffset: 3.0,
+			expectError:    false,
+		},
+		{
+			name:           "Half hour offset",
+			tzOffset:       "GMT +05:30",
+			expectedOffset: 5.5,
+			expectError:    false,
+		},
+		{
+			name:        "Invalid format",
+			tzOffset:    "Invalid",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			offset, err := parseTimezoneOffset(tt.tzOffset)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if offset != tt.expectedOffset {
+					t.Errorf("Expected offset %f, got %f", tt.expectedOffset, offset)
+				}
+			}
+		})
+	}
+}
+
+func TestCalculateUTCTime(t *testing.T) {
+	testDate := time.Date(2025, 11, 15, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		localTime   string
+		tzOffset    string
+		expectedUTC string
+		expectError bool
+	}{
+		{
+			name:        "Summer time 06:00 local (GMT+2)",
+			localTime:   "06:00",
+			tzOffset:    "GMT +02:00",
+			expectedUTC: "2025-11-15T04:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "Summer time 23:59 local (GMT+2)",
+			localTime:   "23:59",
+			tzOffset:    "GMT +02:00",
+			expectedUTC: "2025-11-15T21:59:00Z",
+			expectError: false,
+		},
+		{
+			name:        "Winter time 06:00 local (GMT+1)",
+			localTime:   "06:00",
+			tzOffset:    "GMT +01:00",
+			expectedUTC: "2025-11-15T05:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "Winter time 23:59 local (GMT+1)",
+			localTime:   "23:59",
+			tzOffset:    "GMT +01:00",
+			expectedUTC: "2025-11-15T22:59:00Z",
+			expectError: false,
+		},
+		{
+			name:        "Negative offset 12:00 local (GMT-5)",
+			localTime:   "12:00",
+			tzOffset:    "GMT -05:00",
+			expectedUTC: "2025-11-15T17:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "Invalid time format",
+			localTime:   "invalid",
+			tzOffset:    "GMT +02:00",
+			expectError: true,
+		},
+		{
+			name:        "Invalid timezone format",
+			localTime:   "06:00",
+			tzOffset:    "invalid",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			utcTime, err := calculateUTCTime(testDate, tt.localTime, tt.tzOffset)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if utcTime != tt.expectedUTC {
+					t.Errorf("Expected UTC time %s, got %s", tt.expectedUTC, utcTime)
+				}
+			}
+		})
+	}
+}
 
 func TestMakeBookingRequestUsesLocationTimezone(t *testing.T) {
 	// Test that the booking request uses the location's timezone offset
