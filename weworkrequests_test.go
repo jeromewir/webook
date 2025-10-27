@@ -159,12 +159,6 @@ func TestMakeBookingRequestUsesLocationTimezone(t *testing.T) {
 				t.Errorf("Expected timezone offset %s, got %s", tt.expectedTimezone, space.Location.TimezoneOffset)
 			}
 
-			// Verify that UTCOffset would be correctly set
-			expectedUTCOffset := space.Location.TimezoneOffset
-			if expectedUTCOffset != tt.expectedTimezone {
-				t.Errorf("UTCOffset should be %s, got %s", tt.expectedTimezone, expectedUTCOffset)
-			}
-
 			// Note: This test validates the structure. The actual fix ensures
 			// that TimezoneUsed uses space.Location.TimezoneOffset instead of
 			// a hardcoded "GMT +02:00" value, which will automatically handle
