@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"resty.dev/v3"
 )
 
@@ -147,39 +146,6 @@ func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (
 	}
 
 	return locationsResponse.GetSharedWorkspaces.Workspaces[0], nil
-}
-
-func getBearerToken(ctx context.Context) (string, error) {
-	var token string
-
-	if err := chromedp.Run(ctx,
-		chromedp.EvaluateAsDevTools(`(function() {
-			const baseItems = localStorage.getItem('Auth0Config');
-			
-			if (!baseItems) {
-				throw new Error("could not find Auth0Config in local storage");
-			}
-			const config = JSON.parse(baseItems);
-
-			const { clientId, authorizationParams: { scope } } = config;
-
-			const items = localStorage.getItem('@@auth0spajs@@::' + clientId + '::wework::openid ' + scope);
-
-			if (!items) {
-				throw new Error("could not find auth0 items in local storage");
-			}
-
-			return JSON.parse(items).body.access_token;
-		})()`, &token),
-	); err != nil {
-		return "", err
-	}
-
-	if token == "" {
-		return "", errors.New("could not find bearer token")
-	}
-
-	return token, nil
 }
 
 type BookingRequest struct {

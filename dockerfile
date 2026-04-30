@@ -1,15 +1,11 @@
-FROM golang:1.25-alpine
-
+FROM golang:1.26 AS builder
+WORKDIR /src
 COPY go.mod go.sum ./
-RUN apk add --no-cache git
 RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /home/app .
 
-COPY *.go ./
-RUN go build -o /home/app .
-
-FROM chromedp/headless-shell:latest
-
-COPY --from=0 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=0 /home/app /home/app
-
+FROM scratch
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /home/app /home/app
 ENTRYPOINT ["/home/app"]

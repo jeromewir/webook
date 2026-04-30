@@ -8,11 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/eko/gocache/lib/v4/cache"
 )
 
-func registerBookHandler(allocCtx context.Context, email string, password string, coworkingLocationID string, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
+func registerBookHandler(auth *WeWorkAuthenticator, coworkingLocationID string, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -38,40 +37,12 @@ func registerBookHandler(allocCtx context.Context, email string, password string
 			return
 		}
 
-		taskCtx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+		taskCtx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
-
-		// Save cookies
-		defer chromedp.Cancel(taskCtx)
-
-		currentPage, err := getPage(taskCtx)
-
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if currentPage == PageLogin {
-			log.Println("Logging in")
-
-			if err := login(taskCtx, email, password); err != nil {
-				log.Println("Login failed:", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			log.Println("Navigating to bookings page")
-
-			chromedp.Run(taskCtx,
-				// Wait for page to load, so cookies are set
-				chromedp.Navigate(`https://members.wework.com/workplaceone/content2/wework-support`),
-				chromedp.WaitReady(`wework-ondemand-support`, chromedp.ByQuery),
-			)
-		}
 
 		log.Println("Making booking")
 
-		if err := makeBooking(taskCtx, coworkingLocationID, dateString, cacheManager); err != nil {
+		if err := makeBooking(taskCtx, auth, coworkingLocationID, dateString, cacheManager); err != nil {
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
