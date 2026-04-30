@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
+	"golang.org/x/text/unicode/norm"
 	"resty.dev/v3"
 )
+
+var ErrWeWorkLocationNotFound = errors.New("wework location not found")
 
 type WeWorkLocation struct {
 	Reservable struct {
@@ -127,6 +133,25 @@ type WeWorkLocationsResponse struct {
 	} `json:"getSharedWorkspaces"`
 }
 
+type WeWorkProperty struct {
+	ID                     string  `json:"id"`
+	Title                  string  `json:"title"`
+	Address                string  `json:"address"`
+	City                   string  `json:"city"`
+	Country                string  `json:"country"`
+	CoworkingOperatorName  string  `json:"coworkingOperatorName"`
+	CoworkingPropertyID    int     `json:"coworkingPropertyId"`
+	PropertyTimezoneIANA   string  `json:"propertyTimezoneIana"`
+	PropertyTimezoneWin    string  `json:"propertyTimezoneWin"`
+	PropertyTimezoneOffset string  `json:"propertyTimezoneOffset"`
+	Latitude               float64 `json:"-"`
+	Longitude              float64 `json:"-"`
+	Position               struct {
+		Latitude  float64 `json:"lat"`
+		Longitude float64 `json:"lng"`
+	} `json:"position"`
+}
+
 func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (WeWorkLocation, error) {
 	request := resty.New().R().SetContext(ctx).SetAuthToken(token)
 
@@ -148,6 +173,129 @@ func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (
 	}
 
 	return locationsResponse.GetSharedWorkspaces.Workspaces[0], nil
+}
+
+func FetchWeWorkLocationByName(ctx context.Context, token string, locationName string) (WeWorkLocation, error) {
+	properties, err := fetchWeWorkProperties(ctx, token)
+	if err != nil {
+		return WeWorkLocation{}, err
+	}
+
+	property, err := findWeWorkPropertyByName(properties, locationName)
+	if err != nil {
+		log.Printf("WeWork property lookup for %q returned %d properties: %s", locationName, len(properties), strings.Join(weWorkPropertyNames(properties), ", "))
+		return WeWorkLocation{}, err
+	}
+
+	log.Printf("WeWork property lookup for %q matched %q (%s)", locationName, property.Title, property.ID)
+	return FetchWeWorkLocation(ctx, token, property.ID)
+}
+
+func fetchWeWorkProperties(ctx context.Context, token string) ([]WeWorkProperty, error) {
+	request := resty.New().R().SetContext(ctx).SetAuthToken(token)
+
+	var properties []WeWorkProperty
+
+	response, err := request.SetResult(&properties).Get("https://members.wework.com/workplaceone/api/Workspace/get-property-list-google-map?offloadToServer=true&isPropSvcCl=false")
+	if err != nil {
+		return nil, err
+	}
+
+	if response.IsError() {
+		return nil, fmt.Errorf("error fetching properties: %s", response.Status())
+	}
+
+	return properties, nil
+}
+
+func findWeWorkPropertyByName(properties []WeWorkProperty, locationName string) (WeWorkProperty, error) {
+	wanted := normalizeLocationName(locationName)
+	if wanted == "" {
+		return WeWorkProperty{}, errors.New("missing wework name")
+	}
+
+	for _, property := range properties {
+		if normalizeLocationName(property.Title) == wanted {
+			return property, nil
+		}
+	}
+
+	var matches []WeWorkProperty
+	for _, property := range properties {
+		if strings.Contains(normalizeLocationName(property.Title), wanted) {
+			matches = append(matches, property)
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+
+	if len(matches) > 1 {
+		log.Printf("WeWork lookup for %q matched multiple properties: %s", locationName, strings.Join(weWorkPropertyNames(matches), ", "))
+		return WeWorkProperty{}, fmt.Errorf("wework name %q matched multiple locations; use the exact name", locationName)
+	}
+
+	for _, property := range properties {
+		if strings.Contains(normalizeLocationName(property.Address), wanted) {
+			matches = append(matches, property)
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+
+	if len(matches) > 1 {
+		log.Printf("WeWork lookup for %q matched multiple property addresses: %s", locationName, strings.Join(weWorkPropertyNames(matches), ", "))
+		return WeWorkProperty{}, fmt.Errorf("wework name %q matched multiple locations; use the exact name", locationName)
+	}
+
+	return WeWorkProperty{}, fmt.Errorf("%w for name %q", ErrWeWorkLocationNotFound, locationName)
+}
+
+func normalizeLocationName(locationName string) string {
+	locationName = strings.NewReplacer("œ", "oe", "Œ", "Oe").Replace(locationName)
+	decomposed := norm.NFD.String(locationName)
+	folded := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) {
+			return -1
+		}
+
+		return r
+	}, decomposed)
+
+	return strings.ToLower(strings.Join(strings.Fields(folded), " "))
+}
+
+func weWorkLocationNames(locations []WeWorkLocation) []string {
+	names := make([]string, 0, len(locations))
+	for _, location := range locations {
+		if location.Location.Name != "" {
+			names = append(names, location.Location.Name)
+		}
+	}
+
+	if len(names) > 10 {
+		return append(names[:10], fmt.Sprintf("...and %d more", len(names)-10))
+	}
+
+	return names
+}
+
+func weWorkPropertyNames(properties []WeWorkProperty) []string {
+	names := make([]string, 0, len(properties))
+	for _, property := range properties {
+		if property.Title != "" {
+			names = append(names, property.Title)
+		}
+	}
+
+	if len(names) > 10 {
+		return append(names[:10], fmt.Sprintf("...and %d more", len(names)-10))
+	}
+
+	return names
 }
 
 type BookingRequest struct {

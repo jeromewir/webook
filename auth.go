@@ -239,13 +239,8 @@ func postToken(ctx context.Context, client *http.Client, values url.Values) (aut
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return authTokenResponse{}, err
-	}
-
 	var token authTokenResponse
-	if err := json.Unmarshal(body, &token); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
 		return authTokenResponse{}, err
 	}
 
@@ -280,30 +275,41 @@ func doFollow(ctx context.Context, client *http.Client, method, rawURL string, v
 			return nil, "", err
 		}
 
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, "", readErr
-		}
-
 		current := resp.Request.URL
-		body := string(bodyBytes)
 		if stop(current) {
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return nil, "", readErr
+			}
+
+			body := string(bodyBytes)
 			return current, body, nil
 		}
 
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return nil, "", readErr
+			}
+
+			body := string(bodyBytes)
 			return current, body, fmt.Errorf("unexpected auth response at %s: %s", current.String(), resp.Status)
 		}
 
 		location := resp.Header.Get("Location")
 		if location == "" {
-			return current, body, fmt.Errorf("auth redirect missing location at %s", current.String())
+			resp.Body.Close()
+			return current, "", fmt.Errorf("auth redirect missing location at %s", current.String())
 		}
+
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 
 		next, err := current.Parse(location)
 		if err != nil {
-			return current, body, err
+			return current, "", err
 		}
 
 		rawURL = next.String()

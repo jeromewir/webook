@@ -149,6 +149,64 @@ func TestCalculateUTCTime(t *testing.T) {
 	}
 }
 
+func TestFindWeWorkPropertyByName(t *testing.T) {
+	properties := []WeWorkProperty{
+		newTestWeWorkProperty("115 Broadway", "115 Broadway, New York, NY"),
+		newTestWeWorkProperty("1 Poultry", "1 Poultry, London"),
+		newTestWeWorkProperty("Coeur Marais", "64-66 Rue Des Archives, Paris"),
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		expected    string
+		expectError bool
+	}{
+		{name: "exact match", input: "115 Broadway", expected: "115 Broadway"},
+		{name: "case insensitive", input: "115 broadway", expected: "115 Broadway"},
+		{name: "extra whitespace", input: "  115   Broadway  ", expected: "115 Broadway"},
+		{name: "unique partial match", input: "Poultry", expected: "1 Poultry"},
+		{name: "ligature insensitive", input: "Cœur Marais", expected: "Coeur Marais"},
+		{name: "address match", input: "Rue Des Archives", expected: "Coeur Marais"},
+		{name: "missing match", input: "Waterloo", expectError: true},
+		{name: "blank name", input: " ", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			property, err := findWeWorkPropertyByName(properties, tt.input)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			if property.Title != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, property.Title)
+			}
+		})
+	}
+}
+
+func TestFindWeWorkPropertyByNameRejectsAmbiguousPartialMatches(t *testing.T) {
+	properties := []WeWorkProperty{
+		newTestWeWorkProperty("Waterloo Station", "Waterloo Station"),
+		newTestWeWorkProperty("Waterloo Road", "Waterloo Road"),
+	}
+
+	if _, err := findWeWorkPropertyByName(properties, "Waterloo"); err == nil {
+		t.Errorf("Expected ambiguous match error")
+	}
+}
+
+func newTestWeWorkProperty(title string, address string) WeWorkProperty {
+	return WeWorkProperty{ID: title, Title: title, Address: address}
+}
+
 func TestMakeBookingRequestUsesLocationTimezone(t *testing.T) {
 	// Test that the booking request uses the location's timezone offset
 	// instead of a hardcoded value, which is important for DST transitions

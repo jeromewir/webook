@@ -7,6 +7,7 @@ require (
 	github.com/eko/gocache/store/go_cache/v4 v4.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	golang.org/x/text v0.29.0
 	resty.dev/v3 v3.0.0-beta.3
 )
 
@@ -42,7 +43,6 @@ require (
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
