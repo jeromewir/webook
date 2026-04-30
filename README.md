@@ -1,15 +1,13 @@
 ## Wework auto-book
 
-Allows you to host a small webserver that listen to request and make booking for a desk for a specific date at a specific location
+Allows you to host a small webserver that listens to requests and makes a desk booking for a specific date at a specific WeWork location.
 
-### How to find the required WeWork location ID ?
+### Booking
 
-- Navigate to the [booking page](https://members.wework.com/workplaceone/content2/bookings/desks)
-- Copy the following text and replace `115 Broadway` with the exact name of the coworking
+Pass the booking date and WeWork name as query parameters:
 
 ```
-document.evaluate(`//div[text()="115 Broadway"]`, document).iterateNext().parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.id
+curl -X POST 'http://localhost:8080/api/book?date=Feb%2018,%202025&wework=115%20Broadway'
 ```
 
-- Open dev console and paste the updated code
-- Copy the result and paste it in the env file
+Use the exact WeWork name when possible. Partial names are accepted only when they match a single location.

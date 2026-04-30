@@ -11,22 +11,26 @@ import (
 	"github.com/eko/gocache/lib/v4/cache"
 )
 
-func registerBookHandler(auth *WeWorkAuthenticator, coworkingLocationID string, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
+func registerBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Extract the "date" query parameter
 		date := r.URL.Query().Get("date")
-
 		if date == "" {
 			http.Error(w, "Missing 'date' query parameter", http.StatusBadRequest)
 			return
 		}
 
-		log.Println("Received booking request for", date)
+		locationName := r.URL.Query().Get("wework")
+		if locationName == "" {
+			http.Error(w, "Missing 'wework' query parameter", http.StatusBadRequest)
+			return
+		}
+
+		log.Println("Received booking request for", date, "at", locationName)
 
 		// Validate the date format (e.g., "Feb 18, 2025")
 		dateString, err := reformatDate(date)
@@ -42,8 +46,12 @@ func registerBookHandler(auth *WeWorkAuthenticator, coworkingLocationID string, 
 
 		log.Println("Making booking")
 
-		if err := makeBooking(taskCtx, auth, coworkingLocationID, dateString, cacheManager); err != nil {
+		if err := makeBooking(taskCtx, auth, locationName, dateString, cacheManager); err != nil {
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if errors.Is(err, ErrWeWorkLocationNotFound) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -52,12 +60,12 @@ func registerBookHandler(auth *WeWorkAuthenticator, coworkingLocationID string, 
 			return
 		}
 
-		log.Println("Booking successful for date:", dateString)
+		log.Println("Booking successful for date:", dateString, "at", locationName)
 
 		// If the date is valid, respond with success
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprintf(w, "Booking successful for date: %s", dateString)
+		fmt.Fprintf(w, "Booking successful for date: %s at %s", dateString, locationName)
 	}
 }
 
