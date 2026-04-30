@@ -340,6 +340,8 @@ type BookingResponse struct {
 	WeworkUUID    string   `json:"WeWorkUUID"`
 }
 
+var makeBookingRequestFunc = makeBookingRequest
+
 // parseTimezoneOffset parses a timezone offset string like "GMT +02:00" or "GMT -05:00"
 // and returns the offset in hours as a float64
 func parseTimezoneOffset(tzOffset string) (float64, error) {
