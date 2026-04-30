@@ -31,6 +31,20 @@ func getWeWorkLocationFromCache(ctx context.Context, cacheManager *cache.Cache[[
 }
 
 func makeBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName string, date string, cacheManager *cache.Cache[[]byte]) error {
+	d, err := parseBookingDate(date)
+	if err != nil {
+		return err
+	}
+
+	bearerToken, weworkLocation, err := prepareBooking(ctx, auth, locationName, cacheManager)
+	if err != nil {
+		return err
+	}
+
+	return makeBookingRequestFunc(ctx, bearerToken, d, weworkLocation)
+}
+
+func parseBookingDate(date string) (time.Time, error) {
 	layout := "Jan 2, 2006"
 	// We do not need to check the error as this was already checked
 	d, _ := time.Parse(layout, date)
@@ -38,9 +52,13 @@ func makeBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName st
 	now := time.Now()
 
 	if d.Sub(now) > 31*24*time.Hour {
-		return ErrDateInOlderThanOneMonthFuture
+		return time.Time{}, ErrDateInOlderThanOneMonthFuture
 	}
 
+	return d, nil
+}
+
+func prepareBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName string, cacheManager *cache.Cache[[]byte]) (string, WeWorkLocation, error) {
 	type tokenResult struct {
 		token string
 		err   error
@@ -66,7 +84,7 @@ func makeBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName st
 	locResult := <-locationCh
 	tokResult := <-tokenCh
 	if tokResult.err != nil {
-		return tokResult.err
+		return "", WeWorkLocation{}, tokResult.err
 	}
 	bearerToken := tokResult.token
 
@@ -78,7 +96,7 @@ func makeBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName st
 		weworkLocation, err = FetchWeWorkLocationByName(ctx, bearerToken, locationName)
 
 		if err != nil {
-			return err
+			return "", WeWorkLocation{}, err
 		}
 
 		// Store in cache for 7 days
@@ -90,7 +108,7 @@ func makeBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName st
 		}
 	}
 
-	return makeBookingRequest(ctx, bearerToken, d, weworkLocation)
+	return bearerToken, weworkLocation, nil
 }
 
 func weWorkLocationCacheKey(locationName string) string {
