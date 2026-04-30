@@ -3,7 +3,6 @@ module github.com/jeromewir/webook
 go 1.25.1
 
 require (
-	github.com/chromedp/chromedp v0.14.1
 	github.com/eko/gocache/lib/v4 v4.2.1
 	github.com/eko/gocache/store/go_cache/v4 v4.2.2
 	github.com/joho/godotenv v1.5.1
@@ -19,17 +18,11 @@ require (
 	github.com/bep/godartsass/v2 v2.1.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20250803210736-d308e07a266d // indirect
-	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cli/safeexec v1.0.1 // indirect
 	github.com/creack/pty v1.1.23 // indirect
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/go-json-experiment/json v0.0.0-20250910080747-cc2cfa0554c3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/gohugoio/hugo v0.134.3 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
