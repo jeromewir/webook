@@ -81,6 +81,40 @@ func TestNewBatchBookResponseIncludesCountsAndSummary(t *testing.T) {
 	}
 }
 
+func TestNormalizeNextBookingsDateRangeAllowsEmptyDates(t *testing.T) {
+	startDate, endDate, err := normalizeNextBookingsDateRange("", "")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if startDate != "" || endDate != "" {
+		t.Fatalf("Expected empty dates, got %q and %q", startDate, endDate)
+	}
+}
+
+func TestNormalizeNextBookingsDateRangeAcceptsDateOnly(t *testing.T) {
+	startDate, endDate, err := normalizeNextBookingsDateRange("2026-03-01", "2026-03-31")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if startDate != "2026-03-01" || endDate != "2026-03-31" {
+		t.Fatalf("Unexpected dates: %q and %q", startDate, endDate)
+	}
+}
+
+func TestNormalizeNextBookingsDateRangeRejectsInvalidDate(t *testing.T) {
+	if _, _, err := normalizeNextBookingsDateRange("Mar 1, 2026", ""); err == nil {
+		t.Fatalf("Expected error for invalid date")
+	}
+}
+
+func TestNormalizeNextBookingsDateRangeRejectsEndBeforeStart(t *testing.T) {
+	if _, _, err := normalizeNextBookingsDateRange("2026-03-31", "2026-03-01"); err == nil {
+		t.Fatalf("Expected error for endDate before startDate")
+	}
+}
+
 func TestNewBatchBookResponseSummarizesFullSuccess(t *testing.T) {
 	response := newBatchBookResponse("Coeur Marais", []batchBookResult{
 		{Date: "Mar 1, 2026", Status: "success"},
