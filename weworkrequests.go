@@ -381,6 +381,51 @@ func FetchNextBookings(ctx context.Context, token string, startDate string, endD
 	return json.RawMessage(body), nil
 }
 
+func CancelWeWorkBooking(ctx context.Context, token string, cancelRequest weWorkCancelBookingRequest) (json.RawMessage, error) {
+	values := url.Values{}
+	values.Set("isOnDemand", "false")
+	values.Set("platFormType", "WEB")
+
+	body, err := json.Marshal(cancelRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	requestURL := "https://members.wework.com/workplaceone/api/common-booking/cancel?" + values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("error cancelling booking: %s", resp.Status)
+	}
+
+	if len(responseBody) == 0 {
+		return json.RawMessage(`{"cancelled":true}`), nil
+	}
+
+	if json.Valid(responseBody) {
+		return json.RawMessage(responseBody), nil
+	}
+
+	return json.RawMessage(fmt.Sprintf(`{"cancelled":%t,"response":%q}`, strings.EqualFold(string(responseBody), "true"), string(responseBody))), nil
+}
+
 var makeBookingRequestFunc = makeBookingRequest
 
 // parseTimezoneOffset parses a timezone offset string like "GMT +02:00" or "GMT -05:00"

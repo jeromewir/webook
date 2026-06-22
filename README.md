@@ -35,3 +35,13 @@ Optionally pass `startDate` and `endDate` as `YYYY-MM-DD`:
 ```bash
 curl 'http://localhost:8080/api/bookings/next?startDate=2026-03-01&endDate=2026-03-31'
 ```
+
+### Cancel booking
+
+Cancel a single booking:
+
+```bash
+curl -X POST 'http://localhost:8080/api/bookings/cancel' \
+  -H 'Content-Type: application/json' \
+  -d '{"bookingId":"..."}'
+```
