@@ -263,13 +263,13 @@ func registerCancelBookingHandler(auth *WeWorkAuthenticator) func(w http.Respons
 			return
 		}
 
-		bookings, err := FetchNextBookings(taskCtx, bearerToken, "", "")
+		bookingDetails, err := FetchBookingDetails(taskCtx, bearerToken, payload.BookingID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		booking, err := findCancelBookingItem(bookings, payload.BookingID)
+		booking, err := findCancelBookingItem(bookingDetails, payload.BookingID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -281,31 +281,57 @@ func registerCancelBookingHandler(auth *WeWorkAuthenticator) func(w http.Respons
 			return
 		}
 
-		response, err := CancelWeWorkBooking(taskCtx, bearerToken, cancelRequest)
-		if err != nil {
+		if err := CancelWeWorkBooking(taskCtx, bearerToken, cancelRequest); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
+		response := map[string]string{"message": "ok"}
+
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write(response)
+		json.NewEncoder(w).Encode(response)
 	}
 }
 
 func findCancelBookingItem(bookings json.RawMessage, bookingID string) (cancelBookingItem, error) {
-	var items []cancelBookingItem
-	if err := json.Unmarshal(bookings, &items); err != nil {
+	var payload any
+	if err := json.Unmarshal(bookings, &payload); err != nil {
 		return cancelBookingItem{}, errors.New("unexpected bookings response format")
 	}
 
-	for _, item := range items {
-		if item.BookingID == bookingID || item.KubeBookingExternalReference == bookingID {
-			return item, nil
+	if item, ok := findCancelBookingItemValue(payload, bookingID); ok {
+		return item, nil
+	}
+
+	return cancelBookingItem{}, fmt.Errorf("bookingId %q not found in booking details", bookingID)
+}
+
+func findCancelBookingItemValue(value any, bookingID string) (cancelBookingItem, bool) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if booking, ok := findCancelBookingItemValue(item, bookingID); ok {
+				return booking, true
+			}
+		}
+	case map[string]any:
+		encoded, err := json.Marshal(typed)
+		if err == nil {
+			var booking cancelBookingItem
+			if err := json.Unmarshal(encoded, &booking); err == nil && (booking.BookingID == bookingID || booking.KubeBookingExternalReference == bookingID) {
+				return booking, true
+			}
+		}
+
+		for _, item := range typed {
+			if booking, ok := findCancelBookingItemValue(item, bookingID); ok {
+				return booking, true
+			}
 		}
 	}
 
-	return cancelBookingItem{}, fmt.Errorf("bookingId %q not found in upcoming bookings", bookingID)
+	return cancelBookingItem{}, false
 }
 
 func newWeWorkCancelBookingRequest(booking cancelBookingItem) (weWorkCancelBookingRequest, error) {

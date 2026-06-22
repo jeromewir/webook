@@ -381,24 +381,21 @@ func FetchNextBookings(ctx context.Context, token string, startDate string, endD
 	return json.RawMessage(body), nil
 }
 
-func CancelWeWorkBooking(ctx context.Context, token string, cancelRequest weWorkCancelBookingRequest) (json.RawMessage, error) {
+func FetchBookingDetails(ctx context.Context, token string, bookingID string) (json.RawMessage, error) {
 	values := url.Values{}
-	values.Set("isOnDemand", "false")
+	values.Set("propertyType", "2")
+	values.Set("reservationId", bookingID)
+	values.Set("bookingId", bookingID)
 	values.Set("platFormType", "WEB")
+	values.Set("sourceType", "0")
 
-	body, err := json.Marshal(cancelRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	requestURL := "https://members.wework.com/workplaceone/api/common-booking/cancel?" + values.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)))
+	requestURL := "https://members.wework.com/workplaceone/api/common-booking/get-specific-booking-data?" + values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -406,24 +403,61 @@ func CancelWeWorkBooking(ctx context.Context, token string, cancelRequest weWork
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("error cancelling booking: %s", resp.Status)
+		return nil, fmt.Errorf("error fetching booking details: %s", resp.Status)
 	}
 
-	if len(responseBody) == 0 {
-		return json.RawMessage(`{"cancelled":true}`), nil
+	if !json.Valid(body) {
+		return nil, errors.New("booking details response was not valid JSON")
 	}
 
-	if json.Valid(responseBody) {
-		return json.RawMessage(responseBody), nil
+	return json.RawMessage(body), nil
+}
+
+func CancelWeWorkBooking(ctx context.Context, token string, cancelRequest weWorkCancelBookingRequest) error {
+	values := url.Values{}
+	values.Set("isOnDemand", "false")
+	values.Set("platFormType", "WEB")
+
+	body, err := json.Marshal(cancelRequest)
+	if err != nil {
+		return err
 	}
 
-	return json.RawMessage(fmt.Sprintf(`{"cancelled":%t,"response":%q}`, strings.EqualFold(string(responseBody), "true"), string(responseBody))), nil
+	requestURL := "https://members.wework.com/workplaceone/api/common-booking/cancel?" + values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("error cancelling booking: %s", resp.Status)
+	}
+
+	if len(responseBody) > 0 && !json.Valid(responseBody) && !strings.EqualFold(string(responseBody), "true") {
+		return fmt.Errorf("unexpected cancel booking response: %s", string(responseBody))
+	}
+
+	return nil
 }
 
 var makeBookingRequestFunc = makeBookingRequest

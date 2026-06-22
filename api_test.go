@@ -166,6 +166,19 @@ func TestFindCancelBookingItemFindsBookingByID(t *testing.T) {
 	}
 }
 
+func TestFindCancelBookingItemFindsWrappedBookingDetails(t *testing.T) {
+	bookings := json.RawMessage(`{"booking":{"bookingId":"booking-123","spaceId":"space-123","location":{"id":"location-123"}}}`)
+
+	booking, err := findCancelBookingItem(bookings, "booking-123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if booking.BookingID != "booking-123" {
+		t.Fatalf("Unexpected booking id: %s", booking.BookingID)
+	}
+}
+
 func TestFindCancelBookingItemRejectsMissingBooking(t *testing.T) {
 	bookings := json.RawMessage(`[{"bookingId":"booking-123"}]`)
 
