@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -338,6 +342,43 @@ type BookingResponse struct {
 	Errors        []string `json:"Errors"`
 	ReservationID string   `json:"ReservationID"`
 	WeworkUUID    string   `json:"WeWorkUUID"`
+}
+
+func FetchNextBookings(ctx context.Context, token string, startDate string, endDate string) (json.RawMessage, error) {
+	values := url.Values{}
+	values.Set("isPastBooking", "false")
+	values.Set("platFormType", "WEB")
+	values.Set("startDate", startDate)
+	values.Set("endDate", endDate)
+
+	requestURL := "https://members.wework.com/workplaceone/api/common-booking/get-app-upcoming-bookings?" + values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("error fetching bookings: %s", resp.Status)
+	}
+
+	if !json.Valid(body) {
+		return nil, errors.New("bookings response was not valid JSON")
+	}
+
+	return json.RawMessage(body), nil
 }
 
 var makeBookingRequestFunc = makeBookingRequest

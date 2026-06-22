@@ -144,6 +144,75 @@ func registerBatchBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cac
 	}
 }
 
+func registerNextBookingsHandler(auth *WeWorkAuthenticator) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		startDate, endDate, err := normalizeNextBookingsDateRange(r.URL.Query().Get("startDate"), r.URL.Query().Get("endDate"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		taskCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		bearerToken, err := auth.BearerToken(taskCtx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		bookings, err := FetchNextBookings(taskCtx, bearerToken, startDate, endDate)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(bookings)
+	}
+}
+
+func normalizeNextBookingsDateRange(startDate string, endDate string) (string, string, error) {
+	start, err := normalizeNextBookingsDate(startDate, "startDate")
+	if err != nil {
+		return "", "", err
+	}
+
+	end, err := normalizeNextBookingsDate(endDate, "endDate")
+	if err != nil {
+		return "", "", err
+	}
+
+	if start != "" && end != "" {
+		parsedStart, _ := time.Parse(time.DateOnly, start)
+		parsedEnd, _ := time.Parse(time.DateOnly, end)
+		if parsedEnd.Before(parsedStart) {
+			return "", "", errors.New("endDate must be on or after startDate")
+		}
+	}
+
+	return start, end, nil
+}
+
+func normalizeNextBookingsDate(date string, field string) (string, error) {
+	if date == "" {
+		return "", nil
+	}
+
+	parsed, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s format. Expected format: 'YYYY-MM-DD'", field)
+	}
+
+	return parsed.Format(time.DateOnly), nil
+}
+
 func newBatchBookResponse(wework string, results []batchBookResult) batchBookResponse {
 	response := batchBookResponse{Wework: wework, Results: results}
 	for _, result := range results {

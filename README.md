@@ -21,3 +21,17 @@ curl -X POST 'http://localhost:8080/api/book/batch' \
 Batch bookings run in parallel, up to 3 at a time.
 
 Use the exact WeWork name when possible. Partial names are accepted only when they match a single location.
+
+### Next bookings
+
+List your upcoming bookings:
+
+```bash
+curl 'http://localhost:8080/api/bookings/next'
+```
+
+Optionally pass `startDate` and `endDate` as `YYYY-MM-DD`:
+
+```bash
+curl 'http://localhost:8080/api/bookings/next?startDate=2026-03-01&endDate=2026-03-31'
+```
