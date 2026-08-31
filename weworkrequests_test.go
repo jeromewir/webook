@@ -203,6 +203,17 @@ func TestFindWeWorkPropertyByNameRejectsAmbiguousPartialMatches(t *testing.T) {
 	}
 }
 
+func TestWeWorkPropertyAllowsStringCoworkingPropertyID(t *testing.T) {
+	var property WeWorkProperty
+	if err := json.Unmarshal([]byte(`{"id":"location-id","title":"33 Rue la Fayette","coworkingPropertyId":"456"}`), &property); err != nil {
+		t.Fatalf("Unexpected error decoding property: %v", err)
+	}
+
+	if property.Title != "33 Rue la Fayette" {
+		t.Fatalf("Expected property title to be decoded, got %q", property.Title)
+	}
+}
+
 func newTestWeWorkProperty(title string, address string) WeWorkProperty {
 	return WeWorkProperty{ID: title, Title: title, Address: address}
 }
