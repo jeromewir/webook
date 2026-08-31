@@ -144,7 +144,6 @@ type WeWorkProperty struct {
 	City                   string  `json:"city"`
 	Country                string  `json:"country"`
 	CoworkingOperatorName  string  `json:"coworkingOperatorName"`
-	CoworkingPropertyID    int     `json:"coworkingPropertyId"`
 	PropertyTimezoneIANA   string  `json:"propertyTimezoneIana"`
 	PropertyTimezoneWin    string  `json:"propertyTimezoneWin"`
 	PropertyTimezoneOffset string  `json:"propertyTimezoneOffset"`
