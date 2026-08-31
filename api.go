@@ -90,6 +90,62 @@ type batchBookResponse struct {
 	Results      []batchBookResult `json:"results"`
 }
 
+type cancelBookingRequest struct {
+	BookingID string `json:"bookingId"`
+}
+
+type cancelBookingItem struct {
+	BookingID                    string  `json:"bookingId"`
+	KubeBookingExternalReference string  `json:"kubeBookingExternalReference"`
+	IsFranchiseBooking           bool    `json:"isFranchiseBooking"`
+	UseKubeAPI                   bool    `json:"useKubeApi"`
+	CreditCost                   float64 `json:"creditCost"`
+	StartDate                    string  `json:"startDate"`
+	EndDate                      string  `json:"endDate"`
+	SpaceID                      string  `json:"spaceId"`
+	SpaceExternalReference       string  `json:"spaceExternalReference"`
+	SpaceType                    int     `json:"spaceType"`
+	BookingType                  int     `json:"bookingType"`
+	IsHybridSpace                bool    `json:"isHybridSpace"`
+	BookingDate                  string  `json:"bookingDate"`
+	Location                     struct {
+		ID         string `json:"id"`
+		SourceType int    `json:"sourceType"`
+		Address    struct {
+			ID      string `json:"id"`
+			Line1   string `json:"line1"`
+			Line2   string `json:"line2"`
+			Country string `json:"country"`
+		} `json:"address"`
+	} `json:"location"`
+}
+
+type weWorkCancelBookingRequest struct {
+	BookingID           string                  `json:"bookingId"`
+	BookingLocationType int                     `json:"bookingLocationType"`
+	CreditsUsed         float64                 `json:"creditsUsed"`
+	StartTime           string                  `json:"startTime"`
+	EndTime             string                  `json:"endTime"`
+	LocationID          string                  `json:"locationId"`
+	ReservableID        string                  `json:"reservableId"`
+	IsBookingApprovalOn bool                    `json:"isBookingApprovalOn"`
+	BookingType         int                     `json:"bookingType"`
+	SpaceID             string                  `json:"spaceId"`
+	CancellationNote    string                  `json:"cancellationNote"`
+	MailParams          cancelBookingMailParams `json:"mailParams"`
+	ReservationID       string                  `json:"reservationId"`
+}
+
+type cancelBookingMailParams struct {
+	WorkspaceType      int    `json:"workspaceType"`
+	DayFormatted       string `json:"dayFormatted"`
+	StartTimeFormatted string `json:"startTimeFormatted"`
+	EndTimeFormatted   string `json:"endTimeFormatted"`
+	FloorAddress       string `json:"floorAddress"`
+	LocationAddress    string `json:"locationAddress"`
+	LocationCountry    string `json:"locationCountry"`
+}
+
 func registerBatchBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cache[[]byte]) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -176,6 +232,166 @@ func registerNextBookingsHandler(auth *WeWorkAuthenticator) func(w http.Response
 		w.WriteHeader(http.StatusOK)
 		w.Write(bookings)
 	}
+}
+
+func registerCancelBookingHandler(auth *WeWorkAuthenticator) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload cancelBookingRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&payload); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		if payload.BookingID == "" {
+			http.Error(w, "missing bookingId", http.StatusBadRequest)
+			return
+		}
+
+		taskCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		bearerToken, err := auth.BearerToken(taskCtx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		bookingDetails, err := FetchBookingDetails(taskCtx, bearerToken, payload.BookingID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		booking, err := findCancelBookingItem(bookingDetails, payload.BookingID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		cancelRequest, err := newWeWorkCancelBookingRequest(booking)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := CancelWeWorkBooking(taskCtx, bearerToken, cancelRequest); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		response := map[string]string{"message": "ok"}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}
+}
+
+func findCancelBookingItem(bookings json.RawMessage, bookingID string) (cancelBookingItem, error) {
+	var payload any
+	if err := json.Unmarshal(bookings, &payload); err != nil {
+		return cancelBookingItem{}, errors.New("unexpected bookings response format")
+	}
+
+	if item, ok := findCancelBookingItemValue(payload, bookingID); ok {
+		return item, nil
+	}
+
+	return cancelBookingItem{}, fmt.Errorf("bookingId %q not found in booking details", bookingID)
+}
+
+func findCancelBookingItemValue(value any, bookingID string) (cancelBookingItem, bool) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if booking, ok := findCancelBookingItemValue(item, bookingID); ok {
+				return booking, true
+			}
+		}
+	case map[string]any:
+		encoded, err := json.Marshal(typed)
+		if err == nil {
+			var booking cancelBookingItem
+			if err := json.Unmarshal(encoded, &booking); err == nil && (booking.BookingID == bookingID || booking.KubeBookingExternalReference == bookingID) {
+				return booking, true
+			}
+		}
+
+		for _, item := range typed {
+			if booking, ok := findCancelBookingItemValue(item, bookingID); ok {
+				return booking, true
+			}
+		}
+	}
+
+	return cancelBookingItem{}, false
+}
+
+func newWeWorkCancelBookingRequest(booking cancelBookingItem) (weWorkCancelBookingRequest, error) {
+	bookingID := booking.BookingID
+	if booking.IsFranchiseBooking && booking.KubeBookingExternalReference != "" {
+		bookingID = booking.KubeBookingExternalReference
+	}
+	if bookingID == "" {
+		return weWorkCancelBookingRequest{}, errors.New("booking is missing bookingId")
+	}
+
+	reservationID := bookingID
+	if booking.UseKubeAPI && booking.KubeBookingExternalReference != "" {
+		reservationID = booking.KubeBookingExternalReference
+	}
+
+	locationID := booking.Location.Address.ID
+	if locationID == "" {
+		locationID = booking.Location.ID
+	}
+	if locationID == "" {
+		return weWorkCancelBookingRequest{}, errors.New("booking is missing location id")
+	}
+
+	spaceID := booking.SpaceID
+	if booking.IsFranchiseBooking && booking.SpaceExternalReference != "" {
+		spaceID = booking.SpaceExternalReference
+	}
+	if spaceID == "" {
+		return weWorkCancelBookingRequest{}, errors.New("booking is missing spaceId")
+	}
+
+	bookingType := booking.BookingType
+	if bookingType == 0 {
+		bookingType = 4
+	}
+
+	return weWorkCancelBookingRequest{
+		BookingID:           bookingID,
+		BookingLocationType: booking.Location.SourceType,
+		CreditsUsed:         booking.CreditCost,
+		StartTime:           booking.StartDate,
+		EndTime:             booking.EndDate,
+		LocationID:          locationID,
+		ReservableID:        spaceID,
+		IsBookingApprovalOn: booking.IsHybridSpace,
+		BookingType:         bookingType,
+		SpaceID:             spaceID,
+		CancellationNote:    "",
+		MailParams: cancelBookingMailParams{
+			WorkspaceType:      booking.SpaceType,
+			DayFormatted:       booking.BookingDate,
+			StartTimeFormatted: booking.StartDate,
+			EndTimeFormatted:   booking.EndDate,
+			FloorAddress:       "",
+			LocationAddress:    booking.Location.Address.Line1 + " " + booking.Location.Address.Line2,
+			LocationCountry:    booking.Location.Address.Country,
+		},
+		ReservationID: reservationID,
+	}, nil
 }
 
 func normalizeNextBookingsDateRange(startDate string, endDate string) (string, string, error) {

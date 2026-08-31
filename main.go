@@ -33,6 +33,7 @@ func main() {
 	http.HandleFunc("/api/book", registerBookHandler(auth, cacheManager))
 	http.HandleFunc("/api/book/batch", registerBatchBookHandler(auth, cacheManager))
 	http.HandleFunc("/api/bookings/next", registerNextBookingsHandler(auth))
+	http.HandleFunc("/api/bookings/cancel", registerCancelBookingHandler(auth))
 	log.Println("Starting server on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -113,6 +114,107 @@ func TestNormalizeNextBookingsDateRangeRejectsEndBeforeStart(t *testing.T) {
 	if _, _, err := normalizeNextBookingsDateRange("2026-03-31", "2026-03-01"); err == nil {
 		t.Fatalf("Expected error for endDate before startDate")
 	}
+}
+
+func TestNewWeWorkCancelBookingRequestBuildsSingleCancelPayload(t *testing.T) {
+	booking := newTestCancelBookingItem("booking-123", "location-123", "space-123")
+	booking.CreditCost = 2
+	booking.StartDate = "2026-03-01T06:00:00Z"
+	booking.EndDate = "2026-03-01T23:59:00Z"
+	booking.SpaceType = 1
+	booking.BookingDate = "2026-03-01"
+	booking.Location.SourceType = 2
+	booking.Location.Address.Line1 = "115 Broadway"
+	booking.Location.Address.Line2 = "Floor 4"
+	booking.Location.Address.Country = "US"
+
+	cancelRequest, err := newWeWorkCancelBookingRequest(booking)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if cancelRequest.BookingID != "booking-123" {
+		t.Fatalf("Unexpected booking id: %s", cancelRequest.BookingID)
+	}
+	if cancelRequest.BookingType != 4 {
+		t.Fatalf("Expected default shared workspace booking type, got %d", cancelRequest.BookingType)
+	}
+	if cancelRequest.SpaceID != "space-123" || cancelRequest.ReservableID != "space-123" {
+		t.Fatalf("Unexpected space fields: %+v", cancelRequest)
+	}
+	if cancelRequest.CreditsUsed != 2 {
+		t.Fatalf("Unexpected credits used: %f", cancelRequest.CreditsUsed)
+	}
+	if cancelRequest.ReservationID != "booking-123" {
+		t.Fatalf("Unexpected reservation id: %s", cancelRequest.ReservationID)
+	}
+	if cancelRequest.MailParams.LocationAddress != "115 Broadway Floor 4" {
+		t.Fatalf("Unexpected mail location: %s", cancelRequest.MailParams.LocationAddress)
+	}
+}
+
+func TestFindCancelBookingItemFindsBookingByID(t *testing.T) {
+	bookings := json.RawMessage(`[{"bookingId":"booking-123","spaceId":"space-123","location":{"id":"location-123"}}]`)
+
+	booking, err := findCancelBookingItem(bookings, "booking-123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if booking.BookingID != "booking-123" {
+		t.Fatalf("Unexpected booking id: %s", booking.BookingID)
+	}
+}
+
+func TestFindCancelBookingItemFindsWrappedBookingDetails(t *testing.T) {
+	bookings := json.RawMessage(`{"booking":{"bookingId":"booking-123","spaceId":"space-123","location":{"id":"location-123"}}}`)
+
+	booking, err := findCancelBookingItem(bookings, "booking-123")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if booking.BookingID != "booking-123" {
+		t.Fatalf("Unexpected booking id: %s", booking.BookingID)
+	}
+}
+
+func TestFindCancelBookingItemRejectsMissingBooking(t *testing.T) {
+	bookings := json.RawMessage(`[{"bookingId":"booking-123"}]`)
+
+	if _, err := findCancelBookingItem(bookings, "missing"); err == nil {
+		t.Fatalf("Expected error for missing booking")
+	}
+}
+
+func TestNewWeWorkCancelBookingRequestRejectsMissingBookingID(t *testing.T) {
+	booking := newTestCancelBookingItem("", "location-123", "space-123")
+
+	if _, err := newWeWorkCancelBookingRequest(booking); err == nil {
+		t.Fatalf("Expected error for missing booking id")
+	}
+}
+
+func TestNewWeWorkCancelBookingRequestRejectsMissingLocationID(t *testing.T) {
+	booking := newTestCancelBookingItem("booking-123", "", "space-123")
+
+	if _, err := newWeWorkCancelBookingRequest(booking); err == nil {
+		t.Fatalf("Expected error for missing location id")
+	}
+}
+
+func TestNewWeWorkCancelBookingRequestRejectsMissingSpaceID(t *testing.T) {
+	booking := newTestCancelBookingItem("booking-123", "location-123", "")
+
+	if _, err := newWeWorkCancelBookingRequest(booking); err == nil {
+		t.Fatalf("Expected error for missing space id")
+	}
+}
+
+func newTestCancelBookingItem(bookingID string, locationID string, spaceID string) cancelBookingItem {
+	booking := cancelBookingItem{BookingID: bookingID, SpaceID: spaceID}
+	booking.Location.ID = locationID
+	return booking
 }
 
 func TestNewBatchBookResponseSummarizesFullSuccess(t *testing.T) {
