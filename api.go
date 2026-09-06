@@ -49,6 +49,7 @@ func registerBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cache[[]
 		log.Println("Making booking")
 
 		if err := makeBooking(taskCtx, auth, locationName, dateString, cacheManager); err != nil {
+			log.Printf("Booking failed for date %q at %q: %v", dateString, locationName, err)
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -121,6 +122,7 @@ func registerBatchBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cac
 
 		bearerToken, weworkLocation, err := prepareBooking(taskCtx, auth, payload.Wework, cacheManager)
 		if err != nil {
+			log.Printf("Preparing batch booking failed at %q: %v", payload.Wework, err)
 			if errors.Is(err, ErrWeWorkLocationNotFound) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -284,6 +286,7 @@ func runBatchBookings(ctx context.Context, token string, location WeWorkLocation
 			if err := makeBookingRequestFunc(ctx, token, parsedDates[i], location); err != nil {
 				results[i].Status = "error"
 				results[i].Error = err.Error()
+				log.Printf("Batch booking failed for date %q at %q: %v", dates[i], location.Location.Name, err)
 			}
 		}(i)
 	}
