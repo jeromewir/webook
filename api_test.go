@@ -137,6 +137,13 @@ func TestNewBatchBookResponseSummarizesFullFailure(t *testing.T) {
 	}
 }
 
+func TestHasBatchBookingRateLimit(t *testing.T) {
+	results := []batchBookResult{{Date: "Mar 1, 2026", Status: "error", RateLimited: true}}
+	if !hasBatchBookingRateLimit(results) {
+		t.Fatal("Expected rate-limited batch result")
+	}
+}
+
 func TestRunBatchBookingsLimitsConcurrency(t *testing.T) {
 	original := makeBookingRequestFunc
 	defer func() { makeBookingRequestFunc = original }()

@@ -50,6 +50,10 @@ func registerBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cache[[]
 
 		if err := makeBooking(taskCtx, auth, locationName, dateString, cacheManager); err != nil {
 			log.Printf("Booking failed for date %q at %q: %v", dateString, locationName, err)
+			if errors.Is(err, ErrWeWorkRateLimited) {
+				http.Error(w, err.Error(), http.StatusTooManyRequests)
+				return
+			}
 			if errors.Is(err, ErrDateInOlderThanOneMonthFuture) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -78,9 +82,10 @@ type batchBookRequest struct {
 }
 
 type batchBookResult struct {
-	Date   string `json:"date"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Date        string `json:"date"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+	RateLimited bool   `json:"-"`
 }
 
 type batchBookResponse struct {
@@ -123,6 +128,10 @@ func registerBatchBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cac
 		bearerToken, weworkLocation, err := prepareBooking(taskCtx, auth, payload.Wework, cacheManager)
 		if err != nil {
 			log.Printf("Preparing batch booking failed at %q: %v", payload.Wework, err)
+			if errors.Is(err, ErrWeWorkRateLimited) {
+				http.Error(w, err.Error(), http.StatusTooManyRequests)
+				return
+			}
 			if errors.Is(err, ErrWeWorkLocationNotFound) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -136,7 +145,9 @@ func registerBatchBookHandler(auth *WeWorkAuthenticator, cacheManager *cache.Cac
 		response := newBatchBookResponse(payload.Wework, results)
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if hasBatchBookingError(results) {
+		if hasBatchBookingRateLimit(results) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		} else if hasBatchBookingError(results) {
 			w.WriteHeader(http.StatusInternalServerError)
 		} else {
 			w.WriteHeader(http.StatusOK)
@@ -286,6 +297,7 @@ func runBatchBookings(ctx context.Context, token string, location WeWorkLocation
 			if err := makeBookingRequestFunc(ctx, token, parsedDates[i], location); err != nil {
 				results[i].Status = "error"
 				results[i].Error = err.Error()
+				results[i].RateLimited = errors.Is(err, ErrWeWorkRateLimited)
 				log.Printf("Batch booking failed for date %q at %q: %v", dates[i], location.Location.Name, err)
 			}
 		}(i)
@@ -298,6 +310,16 @@ func runBatchBookings(ctx context.Context, token string, location WeWorkLocation
 func hasBatchBookingError(results []batchBookResult) bool {
 	for _, result := range results {
 		if result.Status == "error" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasBatchBookingRateLimit(results []batchBookResult) bool {
+	for _, result := range results {
+		if result.RateLimited {
 			return true
 		}
 	}
