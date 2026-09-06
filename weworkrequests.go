@@ -23,136 +23,36 @@ var ErrWeWorkLocationNotFound = errors.New("wework location not found")
 
 type WeWorkLocation struct {
 	Reservable struct {
-		Capacity      int    `json:"capacity"`
-		KubeID        string `json:"KubeId"`
-		CwmSpaceID    int    `json:"cwmSpaceId"`
-		CwmSpaceCount int    `json:"cwmSpaceCount"`
+		KubeID string `json:"KubeId"`
 	} `json:"reservable"`
-	UUID           string `json:"uuid"`
-	InventoryUUID  string `json:"inventoryUuid"`
-	ImageURL       string `json:"imageUrl"`
-	HeaderImageURL string `json:"headerImageUrl"`
-	Capacity       int    `json:"capacity"`
-	Credits        int    `json:"credits"`
-	Location       struct {
-		Description       string `json:"description"`
-		SupportEmail      string `json:"supportEmail"`
-		PhoneNormalized   string `json:"phoneNormalized"`
-		Currency          string `json:"currency"`
-		PrimaryTeamMember struct {
-			Name          string `json:"name"`
-			BusinessTitle string `json:"businessTitle"`
-			ImageURL      string `json:"imageUrl"`
-		} `json:"primaryTeamMember"`
-		Amenities []struct {
-			UUID      string `json:"uuid"`
-			Name      string `json:"name"`
-			Highlight bool   `json:"highlight"`
-		} `json:"amenities"`
-		Details struct {
-			HasExtendedHours bool `json:"hasExtendedHours"`
-		} `json:"details"`
-		TransitInfo struct {
-			Bike    string `json:"bike"`
-			Bus     string `json:"bus"`
-			Ferry   string `json:"ferry"`
-			Freeway string `json:"freeway"`
-			Metro   string `json:"metro"`
-			Parking string `json:"parking"`
-		} `json:"transitInfo"`
-		MemberEntranceInstructions string `json:"memberEntranceInstructions"`
-		ParkingInstructions        string `json:"parkingInstructions"`
-		CommunityBarFloor          struct {
-			Name string `json:"name"`
-		} `json:"communityBarFloor"`
+	UUID     string `json:"uuid"`
+	Location struct {
 		TimezoneOffset     string `json:"timezoneOffset"`
 		TimeZoneIdentifier string `json:"timeZoneIdentifier"`
 		TimeZoneWinID      string `json:"timeZoneWinId"`
-		Images             []struct {
-			UUID     string `json:"uuid"`
-			Caption  string `json:"caption"`
-			Category string `json:"category"`
-			URL      string `json:"url"`
-		} `json:"images"`
-		UUID      string  `json:"uuid"`
-		Name      string  `json:"name"`
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-		Address   struct {
+		UUID               string `json:"uuid"`
+		Name               string `json:"name"`
+		Address            struct {
 			Line1   string `json:"line1"`
-			Line2   string `json:"line2"`
 			City    string `json:"city"`
 			State   string `json:"state"`
 			Country string `json:"country"`
-			Zip     string `json:"zip"`
 		} `json:"address"`
-		TimeZone               string  `json:"timeZone"`
-		Distance               float32 `json:"distance"`
-		HasThirdPartyDisplay   bool    `json:"hasThirdPartyDisplay"`
-		IsMigrated             bool    `json:"isMigrated"`
-		SpaceAvailabilityCount int     `json:"spaceAvailabilityCount"`
-		Franchise              string  `json:"franchise"`
-		AccountType            int     `json:"accountType"`
-		AffiliateSpaceType     int     `json:"affiliateSpaceType"`
 	} `json:"location"`
-	OpenTime           string `json:"openTime"`
-	CloseTime          string `json:"closeTime"`
-	CancellationPolicy string `json:"cancellationPolicy"`
-	OperatingHours     []struct {
-		DayOfWeek int    `json:"dayOfWeek"`
-		Day       string `json:"day"`
-		Open      string `json:"open"`
-		Close     string `json:"close"`
-		IsClosed  bool   `json:"isClosed"`
-	} `json:"operatingHours"`
-	ProductPrice struct {
-		UUID        string `json:"uuid"`
-		ProductUUID string `json:"productUuid"`
-		Price       struct {
-			Currency string  `json:"currency"`
-			Amount   float32 `json:"amount"`
-		} `json:"price"`
-		RateUnit             int `json:"rateUnit"`
-		HalfHourCreditPrices []struct {
-			Offset int     `json:"offset"`
-			Amount float64 `json:"amount"`
-		} `json:"halfHourCreditPrices"`
-	} `json:"productPrice"`
-	Seat struct {
-		Total     int `json:"total"`
-		Available int `json:"available"`
-	} `json:"seat"`
-	SeatsAvailable     int  `json:"seatsAvailable"`
-	Order              int  `json:"order"`
-	IsHybridSpace      bool `json:"isHybridSpace"`
-	AffiliateSpaceType int  `json:"affiliateSpaceType"`
-	SpaceTypeID        int  `json:"SpaceTypeID"`
+	OpenTime  string `json:"openTime"`
+	CloseTime string `json:"closeTime"`
 }
 
 type WeWorkLocationsResponse struct {
-	Limit               int `json:"limit"`
-	Offset              int `json:"offset"`
 	GetSharedWorkspaces struct {
 		Workspaces []WeWorkLocation `json:"workspaces"`
 	} `json:"getSharedWorkspaces"`
 }
 
 type WeWorkProperty struct {
-	ID                     string  `json:"id"`
-	Title                  string  `json:"title"`
-	Address                string  `json:"address"`
-	City                   string  `json:"city"`
-	Country                string  `json:"country"`
-	CoworkingOperatorName  string  `json:"coworkingOperatorName"`
-	PropertyTimezoneIANA   string  `json:"propertyTimezoneIana"`
-	PropertyTimezoneWin    string  `json:"propertyTimezoneWin"`
-	PropertyTimezoneOffset string  `json:"propertyTimezoneOffset"`
-	Latitude               float64 `json:"-"`
-	Longitude              float64 `json:"-"`
-	Position               struct {
-		Latitude  float64 `json:"lat"`
-		Longitude float64 `json:"lng"`
-	} `json:"position"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Address string `json:"address"`
 }
 
 func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (WeWorkLocation, error) {
@@ -164,11 +64,11 @@ func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (
 		Get(fmt.Sprintf("https://members.wework.com/workplaceone/api/spaces/get-spaces?locationUUIDs=%s", locationID))
 
 	if err != nil {
-		return WeWorkLocation{}, err
+		return WeWorkLocation{}, weWorkRequestError("fetching locations", response, err)
 	}
 
 	if response.IsError() {
-		return WeWorkLocation{}, fmt.Errorf("error fetching locations: %s", response.Status())
+		return WeWorkLocation{}, weWorkRequestError("fetching locations", response, nil)
 	}
 
 	if len(locationsResponse.GetSharedWorkspaces.Workspaces) == 0 {
@@ -201,11 +101,11 @@ func fetchWeWorkProperties(ctx context.Context, token string) ([]WeWorkProperty,
 
 	response, err := request.SetResult(&properties).Get("https://members.wework.com/workplaceone/api/Workspace/get-property-list-google-map?offloadToServer=true&isPropSvcCl=false")
 	if err != nil {
-		return nil, err
+		return nil, weWorkRequestError("fetching properties", response, err)
 	}
 
 	if response.IsError() {
-		return nil, fmt.Errorf("error fetching properties: %s", response.Status())
+		return nil, weWorkRequestError("fetching properties", response, nil)
 	}
 
 	return properties, nil
@@ -337,10 +237,10 @@ type MailData struct {
 }
 
 type BookingResponse struct {
-	BookingStatus string   `json:"BookingStatus"`
-	Errors        []string `json:"Errors"`
-	ReservationID string   `json:"ReservationID"`
-	WeworkUUID    string   `json:"WeWorkUUID"`
+	BookingStatus string          `json:"BookingStatus"`
+	Errors        json.RawMessage `json:"Errors"`
+	ReservationID string          `json:"ReservationID"`
+	WeworkUUID    string          `json:"WeWorkUUID"`
 }
 
 func FetchNextBookings(ctx context.Context, token string, startDate string, endDate string) (json.RawMessage, error) {
@@ -497,16 +397,38 @@ func makeBookingRequest(ctx context.Context, token string, date time.Time, space
 		Post("https://members.wework.com/workplaceone/api/common-booking/")
 
 	if err != nil {
-		return err
+		return weWorkRequestError("making booking", response, err)
 	}
 
 	if response.IsError() {
-		return fmt.Errorf("error making booking request: %s", response.Status())
+		return weWorkRequestError("making booking", response, nil)
 	}
 
 	if bookingResponse.BookingStatus != "BookingSuccess" {
-		return fmt.Errorf("booking not confirmed: %v", bookingResponse.Errors)
+		return fmt.Errorf("booking not confirmed: status=%q errors=%s response=%q", bookingResponse.BookingStatus, bookingResponse.Errors, truncateForLog(response.String(), 2000))
 	}
 
 	return nil
+}
+
+func weWorkRequestError(operation string, response *resty.Response, requestErr error) error {
+	if response == nil {
+		return fmt.Errorf("%s: %w", operation, requestErr)
+	}
+
+	details := truncateForLog(response.String(), 2000)
+	if requestErr != nil {
+		return fmt.Errorf("%s: %w (status=%s response=%q)", operation, requestErr, response.Status(), details)
+	}
+
+	return fmt.Errorf("%s: status=%s response=%q", operation, response.Status(), details)
+}
+
+func truncateForLog(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= limit {
+		return value
+	}
+
+	return value[:limit] + "..."
 }
