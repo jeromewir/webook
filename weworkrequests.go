@@ -20,6 +20,7 @@ import (
 )
 
 var ErrWeWorkLocationNotFound = errors.New("wework location not found")
+var ErrWeWorkRateLimited = errors.New("wework rate limit exceeded")
 
 type WeWorkLocation struct {
 	Reservable struct {
@@ -56,7 +57,7 @@ type WeWorkProperty struct {
 }
 
 func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (WeWorkLocation, error) {
-	request := resty.New().R().SetContext(ctx).SetAuthToken(token)
+	request := newWeWorkAPIRequest(ctx, token)
 
 	var locationsResponse WeWorkLocationsResponse
 
@@ -95,7 +96,7 @@ func FetchWeWorkLocationByName(ctx context.Context, token string, locationName s
 }
 
 func fetchWeWorkProperties(ctx context.Context, token string) ([]WeWorkProperty, error) {
-	request := resty.New().R().SetContext(ctx).SetAuthToken(token)
+	request := newWeWorkAPIRequest(ctx, token)
 
 	var properties []WeWorkProperty
 
@@ -338,11 +339,7 @@ func calculateUTCTime(date time.Time, localTime string, tzOffset string) (string
 }
 
 func makeBookingRequest(ctx context.Context, token string, date time.Time, space WeWorkLocation) error {
-	request := resty.New().R()
-
-	request.SetAuthToken(token)
-
-	request.SetContext(ctx)
+	request := newWeWorkAPIRequest(ctx, token)
 
 	// Calculate UTC times based on local times and timezone offset
 	// Local start time is 06:00, end time is 23:59
@@ -417,11 +414,28 @@ func weWorkRequestError(operation string, response *resty.Response, requestErr e
 	}
 
 	details := truncateForLog(response.String(), 2000)
+	if isWeWorkRateLimited(response) {
+		return fmt.Errorf("%w while %s: status=%s response=%q", ErrWeWorkRateLimited, operation, response.Status(), details)
+	}
 	if requestErr != nil {
 		return fmt.Errorf("%s: %w (status=%s response=%q)", operation, requestErr, response.Status(), details)
 	}
 
 	return fmt.Errorf("%s: status=%s response=%q", operation, response.Status(), details)
+}
+
+func isWeWorkRateLimited(response *resty.Response) bool {
+	return response != nil && response.StatusCode() == http.StatusTooManyRequests
+}
+
+func newWeWorkAPIRequest(ctx context.Context, token string) *resty.Request {
+	return resty.New().R().
+		SetContext(ctx).
+		SetAuthToken(token).
+		SetHeader("Accept", "application/json").
+		SetHeader("Origin", "https://members.wework.com").
+		SetHeader("Referer", "https://members.wework.com/workplaceone/content2/bookings/desks").
+		SetHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36")
 }
 
 func truncateForLog(value string, limit int) string {

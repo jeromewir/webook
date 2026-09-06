@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
+
+	"resty.dev/v3"
 )
 
 func TestParseTimezoneOffset(t *testing.T) {
@@ -241,5 +245,27 @@ func TestBookingResponseAllowsStructuredErrors(t *testing.T) {
 func TestTruncateForLog(t *testing.T) {
 	if got := truncateForLog("  123456  ", 4); got != "1234..." {
 		t.Fatalf("Unexpected truncated value: %q", got)
+	}
+}
+
+func TestIsWeWorkRateLimited(t *testing.T) {
+	response := &resty.Response{RawResponse: &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Status:     "429 Too Many Requests",
+	}}
+
+	if !isWeWorkRateLimited(response) {
+		t.Fatal("Expected rate-limited response")
+	}
+}
+
+func TestNewWeWorkAPIRequestUsesBrowserHeaders(t *testing.T) {
+	request := newWeWorkAPIRequest(context.Background(), "token")
+
+	if request.Header.Get("Origin") != "https://members.wework.com" {
+		t.Fatalf("Unexpected Origin header: %q", request.Header.Get("Origin"))
+	}
+	if request.Header.Get("Referer") == "" || request.Header.Get("User-Agent") == "" {
+		t.Fatal("Expected browser Referer and User-Agent headers")
 	}
 }
