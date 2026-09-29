@@ -99,12 +99,12 @@ func prepareBooking(ctx context.Context, auth *WeWorkAuthenticator, locationName
 			return "", WeWorkLocation{}, err
 		}
 
-		// Store in cache for 7 days
+		// Store in cache for 30 days
 		cacheKey := weWorkLocationCacheKey(locationName)
 		data, err := json.Marshal(weworkLocation)
 
 		if err == nil {
-			cacheManager.Set(ctx, cacheKey, data, store.WithExpiration(24*time.Hour*7))
+			cacheManager.Set(ctx, cacheKey, data, store.WithExpiration(30*24*time.Hour))
 		}
 	}
 
