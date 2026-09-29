@@ -45,8 +45,11 @@ type WeWorkLocation struct {
 }
 
 type WeWorkLocationsResponse struct {
+	Limit               int `json:"limit"`
+	Offset              int `json:"offset"`
 	GetSharedWorkspaces struct {
 		Workspaces []WeWorkLocation `json:"workspaces"`
+		TotalCount int              `json:"totalCount"`
 	} `json:"getSharedWorkspaces"`
 }
 
@@ -80,36 +83,62 @@ func FetchWeWorkLocation(ctx context.Context, token string, locationID string) (
 }
 
 func FetchWeWorkLocationByName(ctx context.Context, token string, locationName string) (WeWorkLocation, error) {
-	properties, err := fetchWeWorkProperties(ctx, token)
+	locations, err := fetchWeWorkSpaces(ctx, token, "https://members.wework.com/workplaceone/api/spaces/get-spaces")
 	if err != nil {
 		return WeWorkLocation{}, err
 	}
 
-	property, err := findWeWorkPropertyByName(properties, locationName)
+	property, err := findWeWorkPropertyByName(propertiesFromSpaces(locations), locationName)
 	if err != nil {
-		log.Printf("WeWork property lookup for %q returned %d properties: %s", locationName, len(properties), strings.Join(weWorkPropertyNames(properties), ", "))
 		return WeWorkLocation{}, err
 	}
 
 	log.Printf("WeWork property lookup for %q matched %q (%s)", locationName, property.Title, property.ID)
-	return FetchWeWorkLocation(ctx, token, property.ID)
+	for _, location := range locations {
+		if location.Location.UUID == property.ID && location.UUID != "" && location.Reservable.KubeID != "" {
+			return location, nil
+		}
+	}
+	return WeWorkLocation{}, fmt.Errorf("%w for name %q", ErrWeWorkLocationNotFound, locationName)
 }
 
-func fetchWeWorkProperties(ctx context.Context, token string) ([]WeWorkProperty, error) {
-	request := newWeWorkAPIRequest(ctx, token)
+func fetchWeWorkSpaces(ctx context.Context, token, endpoint string) ([]WeWorkLocation, error) {
+	const pageSize = 100
+	var locations []WeWorkLocation
+	for offset := 0; ; {
+		var page WeWorkLocationsResponse
+		request := newWeWorkAPIRequest(ctx, token)
+		response, err := request.SetResult(&page).SetQueryParams(map[string]string{
+			"limit": strconv.Itoa(pageSize), "offset": strconv.Itoa(offset),
+		}).Get(endpoint)
+		if err != nil {
+			return nil, weWorkRequestError("fetching spaces", response, err)
+		}
+		if response.IsError() {
+			return nil, weWorkRequestError("fetching spaces", response, nil)
+		}
+		batch := page.GetSharedWorkspaces.Workspaces
+		locations = append(locations, batch...)
+		offset += len(batch)
+		if len(batch) == 0 || (page.GetSharedWorkspaces.TotalCount > 0 && offset >= page.GetSharedWorkspaces.TotalCount) || (page.GetSharedWorkspaces.TotalCount == 0 && len(batch) < pageSize) {
+			return locations, nil
+		}
+	}
+}
 
-	var properties []WeWorkProperty
-
-	response, err := request.SetResult(&properties).Get("https://members.wework.com/workplaceone/api/Workspace/get-property-list-google-map?offloadToServer=true&isPropSvcCl=false")
-	if err != nil {
-		return nil, weWorkRequestError("fetching properties", response, err)
+func propertiesFromSpaces(locations []WeWorkLocation) []WeWorkProperty {
+	properties := make([]WeWorkProperty, 0, len(locations))
+	seen := make(map[string]bool)
+	for _, space := range locations {
+		location := space.Location
+		if location.UUID == "" || location.Name == "" || space.UUID == "" || space.Reservable.KubeID == "" || seen[location.UUID] {
+			continue
+		}
+		seen[location.UUID] = true
+		properties = append(properties, WeWorkProperty{ID: location.UUID, Title: location.Name, Address: location.Address.Line1})
 	}
 
-	if response.IsError() {
-		return nil, weWorkRequestError("fetching properties", response, nil)
-	}
-
-	return properties, nil
+	return properties
 }
 
 func findWeWorkPropertyByName(properties []WeWorkProperty, locationName string) (WeWorkProperty, error) {

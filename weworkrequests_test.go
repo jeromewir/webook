@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -202,6 +205,65 @@ func TestFindWeWorkPropertyByNameRejectsAmbiguousPartialMatches(t *testing.T) {
 
 	if _, err := findWeWorkPropertyByName(properties, "Waterloo"); err == nil {
 		t.Errorf("Expected ambiguous match error")
+	}
+}
+
+func TestPropertiesFromSpacesFindsBookableLocations(t *testing.T) {
+	var spaces []WeWorkLocation
+	data := `[{"uuid":"space-id","reservable":{"KubeId":"kube-id"},"location":{"uuid":"location-id","name":"33 Rue la Fayette","address":{"line1":"33 Rue la Fayette"}}},{"uuid":"second-space","reservable":{"KubeId":"second-kube"},"location":{"uuid":"location-id","name":"33 Rue la Fayette"}},{"uuid":"other-space","reservable":{"KubeId":"other-kube"},"location":{"uuid":"second-id","name":"20 Bis Rue La Fayette"}},{"uuid":"unbookable","location":{"uuid":"unknown-id","name":"Unknown"}}]`
+	if err := json.Unmarshal([]byte(data), &spaces); err != nil {
+		t.Fatal(err)
+	}
+	properties := propertiesFromSpaces(spaces)
+	if len(properties) != 2 {
+		t.Fatalf("Expected 2 distinct locations, got %d", len(properties))
+	}
+	property, err := findWeWorkPropertyByName(properties, "33 rue la fayette")
+	if err != nil || property.ID != "location-id" || property.Address != "33 Rue la Fayette" {
+		t.Fatalf("Expected bookable location UUID and address, got %+v: %v", property, err)
+	}
+	if _, err := findWeWorkPropertyByName(properties, "rue la fayette"); err == nil {
+		t.Fatal("Expected ambiguous partial location to be rejected")
+	}
+}
+
+func TestFetchWeWorkSpacesPaginates(t *testing.T) {
+	spaces := make([]WeWorkLocation, 101)
+	for i := range spaces {
+		spaces[i].UUID = fmt.Sprintf("space-%d", i)
+		spaces[i].Reservable.KubeID = fmt.Sprintf("kube-%d", i)
+		spaces[i].Location.UUID = fmt.Sprintf("location-%d", i)
+		spaces[i].Location.Name = fmt.Sprintf("Location %d", i)
+	}
+	var offsets []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/spaces/get-spaces" || r.URL.Query().Get("limit") != "100" || r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("unexpected spaces request: %s", r.URL)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+		if err != nil || offset > len(spaces) {
+			t.Errorf("unexpected offset: %q", r.URL.Query().Get("offset"))
+			http.Error(w, "unexpected offset", http.StatusBadRequest)
+			return
+		}
+		offsets = append(offsets, offset)
+		end := min(offset+100, len(spaces))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"limit": 100, "offset": offset, "getSharedWorkspaces": map[string]any{"workspaces": spaces[offset:end], "totalCount": len(spaces)}})
+	}))
+	defer server.Close()
+	got, err := fetchWeWorkSpaces(context.Background(), "token", server.URL+"/spaces/get-spaces")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 101 || len(offsets) != 2 || offsets[0] != 0 || offsets[1] != 100 {
+		t.Fatalf("expected two pages and 101 spaces, got offsets=%v count=%d", offsets, len(got))
+	}
+	property, err := findWeWorkPropertyByName(propertiesFromSpaces(got), "Location 100")
+	if err != nil || property.ID != "location-100" {
+		t.Fatalf("expected location UUID from second page, got %+v: %v", property, err)
 	}
 }
 
