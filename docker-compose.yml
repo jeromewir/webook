@@ -5,3 +5,7 @@ services:
       - 8080:8080
     env_file:
       - .env
+    environment:
+      API_KEYS_FILE: /data/api-keys.json
+    volumes:
+      - ./data:/data

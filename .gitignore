@@ -4,3 +4,5 @@ webook
 bin/
 .playwright-cli
 tmp
+api-keys.json
+data/

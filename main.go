@@ -16,6 +16,21 @@ import (
 func main() {
 	godotenv.Load()
 
+	if len(os.Args) > 1 {
+		if os.Args[1] != "apikey" {
+			log.Fatal("usage: webook [apikey create --name <name>]")
+		}
+		if err := runAPIKeyCLI(os.Args[2:], os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	keys, err := newAPIKeyStore(apiKeysPath())
+	if err != nil {
+		log.Fatal("Loading API keys: ", err)
+	}
+
 	email := os.Getenv("WEWORK_EMAIL")
 	password := os.Getenv("WEWORK_PASSWORD")
 
@@ -34,7 +49,7 @@ func main() {
 	http.HandleFunc("/api/book/batch", registerBatchBookHandler(auth, cacheManager))
 	http.HandleFunc("/api/bookings/next", registerNextBookingsHandler(auth))
 	log.Println("Starting server on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8080", keys.protect(http.DefaultServeMux)))
 
 	log.Println("done")
 }
