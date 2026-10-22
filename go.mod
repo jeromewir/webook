@@ -1,6 +1,6 @@
 module github.com/jeromewir/webook
 
-go 1.25.1
+go 1.26.10
 
 require (
 	github.com/eko/gocache/lib/v4 v4.2.1
